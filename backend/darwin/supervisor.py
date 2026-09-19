@@ -36,6 +36,9 @@ class DarwinSupervisor:
             fee_bps=float(os.getenv("DARWIN_PAPER_FEE_BPS", "3.5")),
             fee_stress_multiplier=float(os.getenv("DARWIN_FEE_STRESS_MULTIPLIER", "1.5")),
         )
+        checkpoint = self.store.load_checkpoint()
+        if checkpoint:
+            self.population.restore(checkpoint)
         self.cfg = JudgeConfig(
             min_sample_seconds=float(os.getenv("DARWIN_MIN_SAMPLE_SECONDS", "300")),
             min_closed_trades=int(os.getenv("DARWIN_MIN_CLOSED_TRADES", "5")),
@@ -68,6 +71,10 @@ class DarwinSupervisor:
             leaders = self.population.metrics(include_killed=False)[:3]
             self._emit("paper_activity", {"population": len(self.population.accounts), "leaders": [r.get("strategy_id") for r in leaders]}, agent_id="forge")
             self._last_factory_activity = now
+            self.checkpoint()
+
+    def checkpoint(self) -> None:
+        self.store.save_checkpoint(self.population.snapshot())
 
     def _emit(self, event_type: str, payload: dict[str, Any] | None = None, *, agent_id: str | None = None, strategy_id: str | None = None) -> dict[str, Any]:
         return self.store.add_factory_event(event_type, payload or {}, agent_id=agent_id, strategy_id=strategy_id)
@@ -309,6 +316,7 @@ class DarwinSupervisor:
 
         self._emit("epoch_completed", {"epoch_id": epoch_id, "champion_id": champion_id, "created": created, "killed": sum(r["decision"] == "KILL" for r in evaluations), "resolved_experiments": resolved_experiments}, agent_id="atlas", strategy_id=champion_id)
         self.population.reset_epoch()
+        self.checkpoint()
         self.last_epoch = time.time()
         return {
             "ran": True,

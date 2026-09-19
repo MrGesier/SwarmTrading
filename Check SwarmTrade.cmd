@@ -20,7 +20,7 @@ echo [Node]
 where node 2>nul
 node --version 2>nul
 where npm 2>nul
-npm --version 2>nul
+call npm --version 2>nul
 echo.
 
 echo [Generated files]

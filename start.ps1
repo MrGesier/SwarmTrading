@@ -1,5 +1,7 @@
+param([switch]$NoBrowser, [switch]$Repair)
 $ErrorActionPreference = 'Stop'
-$projectRoot = $PSScriptRoot
+$projectRoot = [IO.Path]::GetFullPath($PSScriptRoot)
+$env:HYPERLIQUID_ENABLED = 'false'
 $logRoot = Join-Path $projectRoot 'data'
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
 $launcherLog = Join-Path $logRoot 'launcher.log'
@@ -17,7 +19,7 @@ function Cmd-Exists([string]$Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-Set-Content -LiteralPath $launcherLog -Value "SwarmTrade launcher started $(Get-Date -Format o)"
+Add-Content -LiteralPath $launcherLog -Value "SwarmTrade launcher started $(Get-Date -Format o)"
 Log "Project root: $projectRoot"
 
 # ---- Python detection -------------------------------------------------------
@@ -60,11 +62,11 @@ if (-not (Test-Path -LiteralPath $pythonExe)) {
 $runtimeReq = Join-Path $projectRoot 'backend\requirements-runtime.txt'
 Log 'Checking Python runtime dependencies...'
 $check = & $pythonExe -c "import fastapi,uvicorn,httpx,websockets,numpy,dotenv,hyperliquid; print('ok')" 2>$null
-if ($LASTEXITCODE -ne 0 -or $check.Trim() -ne 'ok') {
+if ($Repair -or $LASTEXITCODE -ne 0 -or ([string]$check).Trim() -ne 'ok') {
     Log 'Installing/repairing Python dependencies...'
     & $pythonExe -m pip install --disable-pip-version-check --upgrade pip
     if ($LASTEXITCODE -ne 0) { Fail 'pip upgrade failed.' }
-    & $pythonExe -m pip install --disable-pip-version-check -r $runtimeReq
+    & $pythonExe -m pip install --disable-pip-version-check -r $runtimeReq 2>&1 | Tee-Object -FilePath $launcherLog -Append
     if ($LASTEXITCODE -ne 0) { Fail 'Backend dependency installation failed. Check internet access and launcher.log.' }
 }
 Log 'Python backend dependencies: OK'
@@ -72,18 +74,19 @@ Log 'Python backend dependencies: OK'
 # ---- Frontend one-time build ------------------------------------------------
 $frontendRoot = Join-Path $projectRoot 'frontend'
 $distIndex = Join-Path $frontendRoot 'dist\index.html'
-if (-not (Test-Path -LiteralPath $distIndex)) {
+if ($Repair -or -not (Test-Path -LiteralPath $distIndex)) {
     if (-not (Cmd-Exists 'node.exe')) { Fail 'Node.js was not found. Install Node.js 22 LTS, then rerun Start SwarmTrade.cmd.' }
     if (-not (Cmd-Exists 'npm.cmd')) { Fail 'npm was not found. Reinstall Node.js 22 LTS with npm.' }
     $nodeVersionRaw = (& node.exe --version).TrimStart('v')
     Log "Node.js: $nodeVersionRaw"
+    if ([int]$nodeVersionRaw.Split('.')[0] -lt 22) { Fail 'Node.js 22+ is required.' }
     Push-Location $frontendRoot
     try {
         Log 'Installing frontend dependencies (first launch only)...'
-        & npm.cmd ci --no-audit --no-fund --prefer-offline
+        & npm.cmd ci --no-audit --no-fund --prefer-offline 2>&1 | Tee-Object -FilePath $launcherLog -Append
         if ($LASTEXITCODE -ne 0) { Fail 'npm ci failed. See launcher.log.' }
         Log 'Building frontend (first launch only)...'
-        & npm.cmd run build
+        & npm.cmd run build 2>&1 | Tee-Object -FilePath $launcherLog -Append
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $distIndex)) { Fail 'Frontend build failed. See launcher.log.' }
     } finally { Pop-Location }
 }
@@ -96,7 +99,8 @@ $backendReady = $false
 $probe = $null
 try {
     $probe = Invoke-RestMethod "$backendUrl/api/health" -TimeoutSec 2
-    $backendReady = $probe.version -eq $expectedVersion
+    $backendReady = $probe.version -eq $expectedVersion -and $probe.project_root -eq $projectRoot -and $probe.paper_only
+    if ($probe.project_root -ne $projectRoot -or -not $probe.paper_only) { Fail 'Port 8000 already answers from another installation or a non-paper runtime.' }
     if (-not $backendReady) {
         Fail "Port 8000 already answers, but version '$($probe.version)' is not expected '$expectedVersion'. Run Stop SwarmTrade.cmd, then start again."
     }
@@ -115,16 +119,20 @@ if (-not $backendReady) {
     $outLog = Join-Path $logRoot 'backend.log'
     $errLog = Join-Path $logRoot 'backend-error.log'
     if (Test-Path $errLog) { Remove-Item $errLog -Force }
-    Start-Process -FilePath $pythonExe -ArgumentList '-m','uvicorn','main:app','--host','127.0.0.1','--port','8000' -WorkingDirectory (Join-Path $projectRoot 'backend') -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog | Out-Null
+    $backendProcess = Start-Process -PassThru -FilePath $pythonExe -ArgumentList ('"' + (Join-Path $projectRoot 'backend\run_local.py') + '"') -WorkingDirectory (Join-Path $projectRoot 'backend') -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
 }
 
 for ($attempt = 1; $attempt -le 45; $attempt++) {
+    if ($backendProcess -and $backendProcess.HasExited) {
+        Log "Backend exited with code $($backendProcess.ExitCode)."
+        break
+    }
     try {
         $api = Invoke-RestMethod "$backendUrl/api/health" -TimeoutSec 2
         $page = Invoke-WebRequest "$backendUrl/" -TimeoutSec 2 -UseBasicParsing
-        if ($api.version -eq $expectedVersion -and $page.StatusCode -eq 200) {
+        if ($api.version -eq $expectedVersion -and $api.project_root -eq $projectRoot -and $api.paper_only -and $page.StatusCode -eq 200) {
             Log "READY: $backendUrl"
-            Start-Process $backendUrl
+            if (-not $NoBrowser) { Start-Process "$backendUrl/factory" }
             exit 0
         }
     } catch {}

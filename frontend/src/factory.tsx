@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Crown, FastForward, FlaskConical, Pause, Play, RotateCcw, Shield, Sparkles, Wrench, X } from "lucide-react";
 import { API, wsUrl } from "./api";
 
@@ -74,12 +74,33 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const [playback,setPlayback]=useState(false), [speed,setSpeed]=useState(1), [cursor,setCursor]=useState(-1);
   const [eventFilter,setEventFilter]=useState("all");
   const [engineerBusy,setEngineerBusy]=useState(false);
-  const seen=useRef(new Set<number>());
-  const addEvents=(incoming:FactoryEvent[])=>{setEvents(old=>{const next=[...old]; for(const e of incoming){if(!seen.current.has(e.id)){seen.current.add(e.id);next.push(e)}} return next.sort((a,b)=>a.id-b.id).slice(-240)});};
-  useEffect(()=>{let stop=false; const load=async()=>{try{const [s,e,o]=await Promise.all([fetch(`${API}/api/factory/state?symbol=${symbol}&mode=${mode}`).then(r=>r.json()),fetch(`${API}/api/factory/events?symbol=${symbol}&mode=${mode}&limit=240`).then(r=>r.json()),fetch(`${API}/api/openbot/state`).then(r=>r.json()).catch(()=>null)]); if(!stop){setState({...s,openbot:o}); addEvents(e.events??[]);}}catch{}}; void load(); const timer=setInterval(load,5000); const ws=new WebSocket(wsUrl(`/ws/factory?symbol=${symbol}&mode=${mode}`)); ws.onmessage=(m)=>{try{const x=JSON.parse(m.data); if(x.events)addEvents(x.events);}catch{}}; return()=>{stop=true;clearInterval(timer);ws.close();};},[symbol,mode]);
-  useEffect(()=>{if(!playback||!events.length)return; const t=setInterval(()=>setCursor(c=>c>=events.length-1?0:c+1),Math.max(180,1200/speed)); return()=>clearInterval(t);},[playback,speed,events.length]);
-  useEffect(()=>{if(cursor>=events.length)setCursor(events.length-1)},[events.length,cursor]);
-  const liveEvent=playback?(events[cursor]??events.at(-1)):events.at(-1);
+  const [connected,setConnected]=useState(false);
+  const [replaying,setReplaying]=useState(false);
+  const [replayEvents,setReplayEvents]=useState<FactoryEvent[]>([]);
+  useEffect(()=>{
+    let stopped=false, socket:WebSocket|undefined, retry:ReturnType<typeof setTimeout>|undefined;
+    setEvents([]);setState(null);setConnected(false);setPlayback(false);setReplaying(false);setCursor(-1);setSelectedStrategy(null);
+    const add=(incoming:FactoryEvent[])=>{if(stopped)return;setEvents(old=>Array.from(new Map([...old,...incoming].map(e=>[e.id,e])).values()).sort((a,b)=>a.id-b.id).slice(-240));};
+    const load=async()=>{try{
+      const [sr,er]=await Promise.all([fetch(`${API}/api/factory/state?symbol=${symbol}&mode=${mode}`),fetch(`${API}/api/factory/events?symbol=${symbol}&mode=${mode}&limit=240`)]);
+      if(!sr.ok||!er.ok)throw new Error('Factory unavailable');
+      const [s,e]=await Promise.all([sr.json(),er.json()]);
+      if(!stopped){setState(s);add(e.events??[]);}
+    }catch{if(!stopped)setConnected(false);}};
+    const connect=()=>{if(stopped)return;socket=new WebSocket(wsUrl(`/ws/factory?symbol=${symbol}&mode=${mode}`));
+      socket.onopen=()=>{if(!stopped){setConnected(true);void load();}};
+      socket.onmessage=m=>{if(stopped)return;try{const x=JSON.parse(m.data);if(x.events)add(x.events);}catch{}};
+      socket.onerror=()=>socket?.close();
+      socket.onclose=()=>{if(!stopped){setConnected(false);retry=setTimeout(connect,2000);}};
+    };
+    void load();connect();const timer=setInterval(load,5000);
+    return()=>{stopped=true;clearInterval(timer);clearTimeout(retry);socket?.close();};
+  },[symbol,mode]);
+  const timeline=replaying?replayEvents:events;
+  useEffect(()=>{if(!playback||!timeline.length)return;const t=setInterval(()=>setCursor(c=>Math.min(c+1,timeline.length-1)),1200/speed);return()=>clearInterval(t);},[playback,speed,timeline.length]);
+  useEffect(()=>{if(playback&&cursor>=timeline.length-1)setPlayback(false);},[cursor,playback,timeline.length]);
+  const selectEvent=(index:number)=>{if(!replaying)setReplayEvents(events);setReplaying(true);setPlayback(false);setCursor(index);};
+  const liveEvent=replaying?timeline[cursor]:events.at(-1);
   const activeAgent=liveEvent?.agent_id??null;
   const lastJudge=[...events].reverse().find(e=>e.type==="judge_decision");
   const selected=state?.agents.find(a=>a.id===selectedAgent)??null;
@@ -96,11 +117,11 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const impactIds=useMemo(()=>{if(!selectedAgent)return new Set<string>(); const map:Record<string,string[]>={atlas:["curie","judge","mnemosyne"],curie:["atlas","evolve"],evolve:["curie","forge"],forge:["evolve","judge"],judge:["forge","atlas","mnemosyne"],mnemosyne:["judge","atlas"],cerberus:["atlas","hermes"],hermes:["cerberus"]}; return new Set([selectedAgent,...(map[selectedAgent]??[])]);},[selectedAgent]);
   const inspect=async(id:string)=>{try{setSelectedStrategy(await fetch(`${API}/api/darwin/strategy/${encodeURIComponent(id)}?symbol=${symbol}&mode=${mode}`).then(r=>r.json()));}catch{}};
   const prepareEngineerTask=async()=>{setEngineerBusy(true);try{await fetch(`${API}/api/engineer/task`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol,mode})});const fresh=await fetch(`${API}/api/factory/state?symbol=${symbol}&mode=${mode}`).then(r=>r.json());setState(fresh);}catch{}finally{setEngineerBusy(false)}};
-  if(!state)return <div className="factory-loading"><span>🏭</span><b>Waking the factory crew…</b></div>;
+  if(!state)return <div className="factory-loading"><span>🏭</span><b>{connected?"Loading factory…":"Disconnected — reconnecting…"}</b></div>;
   const A=(id:string)=>state.agents.find(a=>a.id===id)!;
   const isDim=(id:string)=>!!selectedAgent&&!impactIds.has(id);
   const eventKinds=["all","hypothesis_created","mutation_created","judge_decision","strategy_killed","champion_promoted","lesson_saved"];
-  const recent=[...events].reverse().filter(e=>eventFilter==="all"||e.type===eventFilter).slice(0,60);
+  const recent=[...timeline].reverse().filter(e=>eventFilter==="all"||e.type===eventFilter).slice(0,60);
   const geneCatalog=state.research?.genome?.catalog??[];
   const evolution=state.evolution??{};
   const evoHistory=evolution.history??[];
@@ -109,8 +130,8 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const trend=String(evolution.trend??"WAITING");
   return <div className="factory-page">
     <header className="factory-hero">
-      <div><span className="factory-eyebrow">DARWIN FACTORY · CREW MODE</span><h2>Watch the factory learn.</h2><p>Different characters, real events, persistent generations — and an observable paper-research improvement trail.</p></div>
-      <div className="factory-live"><span className="pulse-dot"/><b>{state.market.health}</b><small>{state.market.regime} · {state.symbol}</small></div>
+      <div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Watch the factory learn.</h2><p>Different characters, real events, persistent generations — and an observable paper-research improvement trail.</p></div>
+      <div className="factory-live"><span className="pulse-dot"/><b>{connected?state.market.health:"DISCONNECTED · RECONNECTING"}</b><small>{state.market.regime} · {state.symbol}</small></div>
     </header>
     <div className="factory-strip">
       <div><small>POPULATION</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER??0} challengers</span></div>
@@ -128,7 +149,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         <div className="pulse-card"><span>🛡️</span><div><b>{state.execution.ready?"Execution armed":"Capital locked"}</b><small>{state.execution.network??"testnet"} · paper remains primary</small></div></div>
         <div className="pulse-card"><span>🧠</span><div><b>OpenAI research brain</b><small>Sol → Sol → Terra · Judge critic · Luna memory</small></div></div>
         <div className="pulse-card"><span>🧬</span><div><b>Genome V{state.research?.genome?.version??2}</b><small>{geneCatalog.length} bounded genes · one variable per experiment</small></div></div>
-        <div className="pulse-card"><span>🤖</span><div><b>OpenBot {state.openbot?.enabled?"ONLINE":"OPTIONAL"}</b><small>{state.openbot?.enabled?"4 local AG-UI coworkers available":"bridge ready · install extras + token"}</small></div></div>
+        <div className="pulse-card"><span>🤖</span><div><b>OpenBot {state.openbot?.enabled?"ONLINE":"OPTIONAL"}</b><small>{state.openbot?.enabled?"4 local AG-UI coworkers available":"not connected · optional extras + token required"}</small></div></div>
         <div className="genome-lab"><h4>Genome V2 genes</h4><div>{geneCatalog.map((g:any)=><span key={g.name} title={g.description}>{g.label??g.name}</span>)}</div></div>
         <div className="mini-leaders"><h4>Top genomes</h4>{state.leaderboard.slice(0,6).map((r,i)=><button key={r.strategy_id} onClick={()=>void inspect(r.strategy_id)}><span>{i+1}</span><b>{r.strategy_id}</b><em className={(r.return_bps??0)>=0?"positive":"negative"}>{signed(r.return_bps)} bp</em></button>)}</div>
       </aside>
@@ -168,14 +189,14 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <aside className="factory-side right">
         <div className="factory-panel-title"><Sparkles size={16}/> Impact inspector</div>
         {selected?<div className="impact-card" style={{"--agent":selected.color} as React.CSSProperties}><button onClick={()=>setSelectedAgent(null)}><X size={14}/></button><span className="impact-emoji">{persona[selected.id]?.emoji}<i>{persona[selected.id]?.badge}</i></span><h3>{selected.name}</h3><small>{persona[selected.id]?.title} · {selected.role}</small><p>{selected.function}</p><dl><dt>State</dt><dd>{selected.status}</dd><dt>Brain</dt><dd>{selected.llm?.runtime??selected.brain_status} · {selected.llm?.model??"code"}</dd><dt>Class</dt><dd>{selected.brain_class??"—"}</dd><dt>Capital</dt><dd>{selected.capital_permission}</dd></dl><div className="impact-metrics">{(impactMetrics[selected.id]??[]).map(([k,v])=><span key={k}><small>{k}</small><b>{v}</b></span>)}</div><h4>Inputs</h4><p>{selected.inputs.join(" · ")}</p><h4>Outputs</h4><p>{selected.outputs.join(" · ")}</p></div>:<div className="impact-empty"><span>👆</span><b>Click a character</b><p>Its dependencies, decisions and impact paths will light up.</p></div>}
-        {selectedStrategy&&<div className="strategy-pop"><button onClick={()=>setSelectedStrategy(null)}><X size={13}/></button><small>GENOME V{selectedStrategy.strategy.genome_version??2} INSPECTOR</small><b>{selectedStrategy.strategy.id}</b><p>{selectedStrategy.lineage.map((x:any)=>x.id).reverse().join(" → ")}</p><span>{selectedStrategy.strategy.family} · {selectedStrategy.strategy.horizon}s · gen {selectedStrategy.strategy.generation}</span><div className="gene-grid">{geneCatalog.map((g:any)=><span key={g.name}><small>{g.label??g.name}</small><b>{fmt(selectedStrategy.strategy[g.name],g.kind==="int"?0:2)}{g.unit?` ${g.unit}`:""}</b></span>)}</div>{selectedStrategy.strategy.mutation?.parameter&&<div className="mutation-note"><small>LAST MUTATION</small><b>{selectedStrategy.strategy.mutation.parameter}</b><p>{String(selectedStrategy.strategy.mutation.from??"?")} → {String(selectedStrategy.strategy.mutation.to??"?")} · ×{fmt(selectedStrategy.strategy.mutation.factor,2)}</p></div>}</div>}
+        {selectedStrategy&&<div className="strategy-pop"><button onClick={()=>setSelectedStrategy(null)}><X size={13}/></button><small>GENOME V{selectedStrategy.strategy.genome_version??2} INSPECTOR</small><b>{selectedStrategy.strategy.id}</b><p>{[...selectedStrategy.lineage].reverse().map((x:any)=><button key={x.id} onClick={()=>void inspect(x.id)}>{x.id} → </button>)}</p><div>Children: {(selectedStrategy.children??[]).map((id:string)=><button key={id} onClick={()=>void inspect(id)}>{id}</button>)}</div><span>{selectedStrategy.strategy.family} · {selectedStrategy.strategy.horizon}s · gen {selectedStrategy.strategy.generation}</span><div className="gene-grid">{geneCatalog.map((g:any)=><span key={g.name}><small>{g.label??g.name}</small><b>{fmt(selectedStrategy.strategy[g.name],g.kind==="int"?0:2)}{g.unit?` ${g.unit}`:""}</b></span>)}</div>{selectedStrategy.strategy.mutation?.parameter&&<div className="mutation-note"><small>LAST MUTATION</small><b>{selectedStrategy.strategy.mutation.parameter}</b><p>{String(selectedStrategy.strategy.mutation.from??"?")} → {String(selectedStrategy.strategy.mutation.to??"?")} · ×{fmt(selectedStrategy.strategy.mutation.factor,2)}</p></div>}</div>}
       </aside>
     </section>
 
     <section className="evolution-observatory">
       <div className="evolution-head">
-        <div><span>EVOLUTION OBSERVATORY</span><h3>Is Darwin actually getting better?</h3><p>{evolution.definition??"Paper-research quality only; not a live-profitability forecast."}</p></div>
-        <div className={`evolution-verdict ${trend.toLowerCase()}`}><small>TREND · {evolution.confidence??"LOW"} CONFIDENCE</small><b>{trend}</b><span>{evolution.epochs_observed??0} epochs · {evolution.champion_changes??0} champion changes</span></div>
+        <div><span>EVOLUTION OBSERVATORY</span><h3>How are paper metrics changing?</h3><p>{evolution.limitations??evolution.definition??"Paper-research quality only; not a live-profitability forecast."}</p></div>
+        <div className={`evolution-verdict ${trend.toLowerCase()}`}><small>DESCRIPTIVE TREND · UNCERTAINTY UNESTIMATED</small><b>{trend}</b><span>{evolution.epochs_observed??0} epochs · {evolution.champion_changes??0} champion changes</span></div>
       </div>
       <div className="evolution-kpis">
         <div><small>RESEARCH QUALITY</small><b>{latestEvolution?fmt(latestEvolution.research_quality_index,1):"—"}<i>/100</i></b><span className={deltaClass(evoDelta.research_quality_index)}>Δ {signed(evoDelta.research_quality_index)} pts</span></div>
@@ -193,10 +214,13 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
     </section>
 
     <section className="factory-playback">
-      <div className="playback-head"><div><b>Factory recorder</b><small>{events.length} persisted events loaded · {playback?"PLAYBACK":"LIVE"}</small></div><div className="playback-controls"><button onClick={()=>{setPlayback(false);setCursor(events.length-1)}}><RotateCcw size={14}/></button><button className={playback?"active":""} onClick={()=>{setCursor(cursor<0?0:cursor);setPlayback(!playback)}}>{playback?<Pause size={15}/>:<Play size={15}/>}</button><button onClick={()=>setSpeed(speed===1?2:speed===2?4:speed===4?8:1)}><FastForward size={14}/> x{speed}</button></div></div>
-      <div className="playback-scrub"><input type="range" min={0} max={Math.max(0,events.length-1)} value={Math.max(0,cursor<0?events.length-1:cursor)} onChange={e=>{setPlayback(false);setCursor(Number(e.target.value))}}/><span>{liveEvent?`${time(liveEvent.ts)} · ${liveEvent.type.replaceAll("_"," ")}`:"waiting"}</span></div>
+      <h3>G0 vs descendants — same epoch</h3>
+      <p>Selected surviving cohorts; equal engine fee policy. Uncertainty unestimated. Missing G0 are not imputed; this does not establish causal progress.</p>
+      <div style={{overflowX:"auto"}}><table><thead><tr><th>Epoch</th><th>Window</th><th>G0 mean bp / trades</th><th>Descendants mean bp / trades</th><th>Status</th></tr></thead><tbody>{(evolution.baseline_comparisons??[]).slice(-12).map((r:any)=><tr key={r.epoch_id}><td>{r.epoch_id}</td><td>{r.sample_seconds??"—"} s</td><td>{r.g0_mean_return_bps==null?"—":fmt(r.g0_mean_return_bps)} / {r.g0_trades}</td><td>{r.descendant_mean_return_bps==null?"—":fmt(r.descendant_mean_return_bps)} / {r.descendant_trades}</td><td>{r.status}</td></tr>)}</tbody></table></div>
+      <div className="playback-head"><div><b>Factory recorder</b><small>{events.length} persisted events loaded · {replaying?(playback?"PLAYBACK":"PAUSED"):"LIVE"}</small></div><div className="playback-controls"><button onClick={()=>{setPlayback(false);setReplaying(false);setCursor(-1)}}><RotateCcw aria-label="Return to live" size={14}/></button><button className={playback?"active":""} onClick={()=>{if(!replaying){setReplayEvents(events);setReplaying(true);setCursor(0)}else if(cursor>=timeline.length-1){setCursor(0)}setPlayback(!playback)}}>{playback?<Pause size={15}/>:<Play size={15}/>}</button><button onClick={()=>setSpeed(speed===1?2:speed===2?4:speed===4?8:1)}><FastForward size={14}/> x{speed}</button></div></div>
+      <div className="playback-scrub"><input aria-label="Playback event" type="range" min={0} max={Math.max(0,timeline.length-1)} value={Math.max(0,cursor<0?timeline.length-1:cursor)} onChange={e=>{selectEvent(Number(e.target.value))}}/><span>{liveEvent?`${time(liveEvent.ts)} · ${liveEvent.type.replaceAll("_"," ")}`:"waiting"}</span></div>
       <div className="event-filters">{eventKinds.map(k=><button key={k} className={eventFilter===k?"active":""} onClick={()=>setEventFilter(k)}>{k==="all"?"ALL":`${eventToken[k]??"•"} ${k.replaceAll("_"," ")}`}</button>)}</div>
-      <div className="factory-timeline">{recent.map(e=><button key={e.id} className={`${e.type} ${liveEvent?.id===e.id?"active":""}`} onClick={()=>{setPlayback(false);setCursor(events.findIndex(x=>x.id===e.id))}}><span>{eventToken[e.type]??"•"}</span><div><b>{e.agent_name??"SYSTEM"}</b><p>{e.label}</p></div><small>{time(e.ts)}</small></button>)}</div>
+      <div className="factory-timeline">{recent.map(e=><button key={e.id} className={`${e.type} ${liveEvent?.id===e.id?"active":""}`} onClick={()=>{selectEvent(timeline.findIndex(x=>x.id===e.id))}}><span>{eventToken[e.type]??"•"}</span><div><b>{e.agent_name??"SYSTEM"}</b><p>{e.label}</p></div><small>{time(e.ts)}</small></button>)}</div>
     </section>
   </div>
 }

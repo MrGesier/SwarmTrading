@@ -171,6 +171,7 @@ class Session:
                 else:
                     await self.live_binance()
         finally:
+            self.darwin.checkpoint()
             await self.recorder.flush()
 
     async def live_binance(self):
@@ -292,7 +293,10 @@ app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=
 
 @app.get('/api/health')
 def health():
-    return dict(status='ok', execution='paper+guarded-hyperliquid', market_source=os.getenv('DARWIN_MARKET_SOURCE','hyperliquid'), version='0.11.0')
+    return dict(status='ok', execution='paper' if not hyperliquid_executor.config.enabled else 'guarded-hyperliquid',
+                paper_only=not hyperliquid_executor.config.enabled, project_root=str(PROJECT_ROOT),
+                data_dir=str(DATA.resolve()), pid=os.getpid(),
+                market_source=os.getenv('DARWIN_MARKET_SOURCE','hyperliquid'), version='0.11.0')
 
 
 @app.get('/api/state')
@@ -588,7 +592,9 @@ if FRONTEND_DIST.exists():
 
     @app.get('/{path:path}')
     def frontend_spa(path: str):
-        candidate = FRONTEND_DIST / path
+        candidate = (FRONTEND_DIST / path).resolve()
+        if not candidate.is_relative_to(FRONTEND_DIST.resolve()) or path.startswith(('api/', 'ag-ui/')):
+            raise HTTPException(404, 'Not found')
         if candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(FRONTEND_DIST / 'index.html')

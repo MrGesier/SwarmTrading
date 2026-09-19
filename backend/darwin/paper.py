@@ -310,6 +310,37 @@ class PaperPopulation:
         for strategy in strategies:
             self.add_strategy(strategy)
 
+    def snapshot(self) -> dict[str, Any]:
+        def plain(value):
+            if isinstance(value, (deque, list, tuple)):
+                return [plain(v) for v in value]
+            if isinstance(value, dict):
+                return {k: plain(v) for k, v in value.items()}
+            return value
+        return {"version": 1, "accounts": {sid: plain(vars(a)) for sid, a in self.accounts.items()},
+                "benchmark": {k: getattr(self, k) for k in ("epoch_start_mid", "last_mid", "epoch_start_ts", "last_ts")}}
+
+    def restore(self, snapshot: dict[str, Any]) -> None:
+        if snapshot.get("version") != 1:
+            raise ValueError("Unsupported paper checkpoint version")
+        for sid, values in snapshot["accounts"].items():
+            if sid not in self.accounts:
+                continue
+            account = self.accounts[sid]
+            for key, value in values.items():
+                if key == "strategy":
+                    continue  # SQLite strategy status/genes remain authoritative.
+                current = getattr(account, key)
+                if isinstance(current, deque):
+                    value = deque(value, maxlen=current.maxlen)
+                elif key == "exit_reasons":
+                    value = defaultdict(int, value)
+                elif key == "regime_closed_pnls":
+                    value = defaultdict(lambda: deque(maxlen=500), {k: deque(v, maxlen=500) for k, v in value.items()})
+                setattr(account, key, value)
+        for key, value in snapshot["benchmark"].items():
+            setattr(self, key, value)
+
     def add_strategy(self, strategy: dict[str, Any]) -> None:
         if strategy["id"] not in self.accounts:
             self.accounts[strategy["id"]] = PaperAccount(upgrade_genome(dict(strategy)), self.notional_usd, self.fee_bps, self.fee_stress_multiplier)
@@ -320,6 +351,9 @@ class PaperPopulation:
             account.strategy["status"] = status
 
     def observe(self, state: Mapping[str, Any]) -> None:
+        # Reject replayed warmup ticks after restoring a checkpoint.
+        if self.last_ts is not None and float(state["timestamp"]) <= self.last_ts:
+            return
         try:
             mid = float(state.get("features", {}).get("mid"))
             ts = float(state.get("timestamp"))

@@ -27,6 +27,7 @@ class DarwinStore:
             self._db.executescript(
                 """
                 PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS paper_checkpoint (id INTEGER PRIMARY KEY CHECK(id=1), epoch_id INTEGER NOT NULL, payload TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS strategies (
                     id TEXT PRIMARY KEY,
                     parent_id TEXT,
@@ -148,6 +149,18 @@ class DarwinStore:
             if "genome_json" not in strategy_columns:
                 self._db.execute("ALTER TABLE strategies ADD COLUMN genome_json TEXT NOT NULL DEFAULT '{}'")
             self._db.commit()
+
+    def save_checkpoint(self, payload: dict[str, Any]) -> None:
+        encoded = json.dumps(payload, separators=(",", ":"), allow_nan=False)
+        with self._lock:
+            epoch = self._db.execute("SELECT COALESCE(MAX(id),0) FROM epochs").fetchone()[0]
+            self._db.execute("INSERT OR REPLACE INTO paper_checkpoint VALUES(1,?,?)", (epoch, encoded))
+            self._db.commit()
+
+    def load_checkpoint(self) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT payload FROM paper_checkpoint WHERE epoch_id=(SELECT COALESCE(MAX(id),0) FROM epochs)").fetchone()
+        return json.loads(row[0]) if row else None
 
     def seed_strategies(self, strategies: Iterable[dict[str, Any]]) -> None:
         now = time.time()
@@ -365,6 +378,7 @@ class DarwinStore:
             return clamp01(0.5 + 0.5 * math.tanh(float(x) / max(1e-9, scale)))
 
         history: list[dict[str, Any]] = []
+        comparisons = []
         family_wins: dict[str, int] = {}
         previous_champion: str | None = None
         champion_changes = 0
@@ -392,6 +406,20 @@ class DarwinStore:
                     item["details"] = {}
                 decoded.append(item)
 
+            baseline = [r for r in decoded if r["generation"] == 0]
+            descendants = [r for r in decoded if r["generation"] > 0]
+            durations = [float(r["sample_seconds"]) for r in baseline + descendants]
+            comparable = bool(baseline and descendants and max(durations) - min(durations) < 1.0)
+            comparisons.append({
+                "epoch_id": epoch_id, "status": "MATCHED_WINDOW" if comparable else "WAITING",
+                "g0_count": len(baseline), "descendant_count": len(descendants),
+                "g0_mean_return_bps": sum(r["return_bps"] for r in baseline) / len(baseline) if comparable else None,
+                "descendant_mean_return_bps": sum(r["return_bps"] for r in descendants) / len(descendants) if comparable else None,
+                "g0_trades": sum(r["closed_trades"] for r in baseline),
+                "descendant_trades": sum(r["closed_trades"] for r in descendants),
+                "sample_seconds": min(durations) if comparable else None,
+                "uncertainty": "Not estimated; selected survivors, correlated strategies and multiple testing. Missing/retired G0 are not imputed; this is not a fixed-cohort causal baseline.",
+            })
             champion_id = ep["champion_id"]
             champion = next((r for r in decoded if r["strategy_id"] == champion_id), decoded[0])
             details = champion.get("details") or {}
@@ -440,6 +468,10 @@ class DarwinStore:
                 "champion_drawdown_bps": drawdown,
                 "champion_evidence_weight": evidence,
                 "champion_trade_z": trade_z,
+                "champion_closed_trades": int(champion["closed_trades"]),
+                "champion_sample_seconds": float(champion["sample_seconds"]),
+                "champion_fees": float(champion["fees"]),
+                "quality_components": {"alpha": alpha_score, "evidence": evidence, "fee_stress": fee_score, "drawdown": drawdown_score, "multiple_testing": significance},
                 "research_quality_index": quality,
                 "best_fitness": max(fitnesses) if fitnesses else 0.0,
                 "mean_fitness": sum(fitnesses) / len(fitnesses) if fitnesses else 0.0,
@@ -524,20 +556,23 @@ class DarwinStore:
                 "champion_drawdown_bps": avg(recent, "champion_drawdown_bps") - avg(early, "champion_drawdown_bps"),
             }
             q_delta = deltas["research_quality_index"]
-            if len(history) < 3:
-                trend = "EARLY"
+            if len(history) < 6:
+                trend = "WAITING"
             elif q_delta >= 4.0:
                 trend = "IMPROVING"
             elif q_delta <= -4.0:
                 trend = "REGRESSING"
             else:
                 trend = "FLAT"
-            confidence = "HIGH" if len(history) >= 12 else ("MEDIUM" if len(history) >= 5 else "LOW")
+            confidence = "LOW"  # Correlated epochs do not establish independent evidence.
 
         latest = history[-1] if history else None
         best_quality = max(history, key=lambda x: x["research_quality_index"]) if history else None
         return {
             "definition": "Paper-research quality only; not a forecast of live profitability.",
+            "formula_version": "rqi-v1",
+            "trend_version": "descriptive-v2",
+            "limitations": "Correlated epochs and selected champions; changes across market periods are not causal evidence of improvement. Independent out-of-sample uncertainty has not been estimated.",
             "trend": trend,
             "confidence": confidence,
             "epochs_observed": len(history),
@@ -552,6 +587,7 @@ class DarwinStore:
                 "family_champion_epochs": [{"family": k, "epochs": v} for k, v in sorted(family_wins.items(), key=lambda kv: (-kv[1], kv[0]))],
             },
             "gene_evolution": gene_evolution,
+            "baseline_comparisons": comparisons,
         }
 
     def strategy_summaries(self, strategy_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -598,7 +634,9 @@ class DarwinStore:
             lineage.append(cursor)
             seen.add(cursor["id"])
             cursor = self.strategy(cursor.get("parent_id")) if cursor.get("parent_id") else None
-        return {"strategy": strategy, "lineage": lineage, "history": history}
+        with self._lock:
+            children = [r[0] for r in self._db.execute("SELECT id FROM strategies WHERE parent_id=? ORDER BY created_at", (strategy_id,))]
+        return {"strategy": strategy, "lineage": lineage, "children": children, "history": history}
 
     def add_experiment(self, *, created_epoch: int | None, parent_id: str, child_ids: list[str], plan: dict[str, Any]) -> int:
         with self._lock:
