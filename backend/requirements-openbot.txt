@@ -1,0 +1,4 @@
+# Optional: only needed when CopilotKit/OpenBot should call Darwin coworkers over AG-UI.
+# Base Darwin does not require these packages.
+pydantic-ai-slim[openai,ag-ui]>=1.0
+python-multipart>=0.0.9

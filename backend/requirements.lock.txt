@@ -27,3 +27,4 @@ typing_extensions==4.16.0
 uvicorn==0.53.0
 watchfiles==1.2.0
 websockets==15.0.1
+hyperliquid-python-sdk==0.24.0

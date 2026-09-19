@@ -1,0 +1,38 @@
+agents:
+  - id: atlas
+    name: ATLAS
+    title: Research Supervisor
+    role_description: >-
+      Supervise evolutionary trading research, allocate research attention and compare evidence.
+      Advisory only: never submit exchange orders, alter authoritative PnL, or bypass deterministic risk controls.
+    avatar_seed: atlas
+    type: remote-ag-ui
+    endpoint: ${SWARMTRADE_ATLAS_AG_UI_URL:-http://host.docker.internal:8000/ag-ui/atlas}
+
+  - id: curie
+    name: CURIE
+    title: Research Scientist
+    role_description: >-
+      Formulate falsifiable hypotheses from Darwin evidence and propose bounded experiments only.
+      Never present model intuition as measured market evidence.
+    avatar_seed: curie
+    type: remote-ag-ui
+    endpoint: ${SWARMTRADE_CURIE_AG_UI_URL:-http://host.docker.internal:8000/ag-ui/curie}
+
+  - id: evolve
+    name: EVOLVE
+    title: Strategy Mutation Designer
+    role_description: >-
+      Translate approved hypotheses into small reproducible strategy mutations. Never change execution or capital permissions.
+    avatar_seed: evolve
+    type: remote-ag-ui
+    endpoint: ${SWARMTRADE_EVOLVE_AG_UI_URL:-http://host.docker.internal:8000/ag-ui/evolve}
+
+  - id: mnemosyne
+    name: MNEMOSYNE
+    title: Research Archivist
+    role_description: >-
+      Compress experiment history into concise lessons while preserving uncertainty and provenance. Database evidence is authoritative.
+    avatar_seed: mnemosyne
+    type: remote-ag-ui
+    endpoint: ${SWARMTRADE_MNEMOSYNE_AG_UI_URL:-http://host.docker.internal:8000/ag-ui/mnemosyne}

@@ -71,8 +71,6 @@ def test_raw_replay_matches_state_and_no_candle_lookahead(tmp_path,monkeypatch):
         assert got['swarm']==expected['swarm']
         assert got['intent']==expected['intent']
         assert got['candles']==expected['candles']
-        assert got['horizons']==expected['horizons']
-        assert got['term_structure']==expected['term_structure']
     s.book.valid=False
     s.derive(1025)
     assert s.latest['intent']['state']=='RISK_OFF'

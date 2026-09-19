@@ -4,15 +4,15 @@ import { CircleHelp } from "lucide-react";
 
 export const explanations: Record<string, string> = {
   "MARKET INTENT":
-    "État de l’horizon sélectionné : consensus pondéré (70 %), flux agressif (15 %) et déséquilibre du carnet (15 %). Trois observations consécutives stabilisent les transitions. RISK_OFF signifie que les données ou l’échauffement ne permettent pas de produire un signal. Ce score n’est pas une probabilité.",
+    "État global du moteur : consensus pondéré (70 %), flux agressif (15 %) et déséquilibre du carnet (15 %). Trois observations consécutives stabilisent les transitions. RISK_OFF signifie que les données ou l’échauffement ne permettent pas de produire un signal. Ce score n’est pas une probabilité.",
   CONSENSUS:
     "Moyenne des signaux, pondérée pour réduire les doublons corrélés. −1 : orientation vendeuse ; +1 : acheteuse ; 0 : neutralité ou opposition. Le chiffre, la courbe et les votes utilisent l’horizon sélectionné.",
   "SWARM ENTROPY":
     "Désaccord entre les poids vendeurs, neutres et acheteurs. Proche de 0 : concentration sur un état ; proche de 1 : fragmentation. Une faible entropie peut aussi correspondre à une majorité neutre : elle ne suffit pas à justifier un trade.",
   "EFFECTIVE STRATEGIES":
-    "Nombre effectif d’opinions indépendantes, calculé avec la matrice de corrélation des 120 derniers vecteurs de signaux de cet horizon. 320 variantes ne sont pas 320 avis indépendants. Les signaux constants sont exclus ; les poids sont recalculés toutes les cinq observations.",
+    "Nombre effectif d’opinions indépendantes, calculé avec la matrice de corrélation des 120 derniers vecteurs de signaux. 320 variantes ne sont pas 320 avis indépendants. Les signaux constants sont exclus ; les poids sont recalculés toutes les cinq observations.",
   "Price & trigger zones":
-    "Bougies à intervalle réglable construites à partir des trades reçus. Les bandes indiquent des niveaux hypothétiques où le poids des stratégies change de direction. Ce sont des sensibilités du modèle, pas des ordres réels du marché.",
+    "Bougies de cinq secondes construites à partir des trades reçus. Les bandes indiquent des niveaux hypothétiques où le poids des stratégies change de direction. Ce sont des sensibilités du modèle, pas des ordres réels du marché.",
   "Liquidity landscape":
     "Chaque colonne représente un instant ; chaque ligne, une zone de prix. Une couleur plus intense indique davantage de liquidité au repos dans les 40 premiers niveaux de chaque côté. La ligne claire est le midpoint. Une disparition de liquidité ne prouve pas une annulation ou du spoofing.",
   "Order-book physics":
@@ -46,7 +46,7 @@ export const explanations: Record<string, string> = {
   "Trade-flow imbalance":
     "(Volume d’achats agressifs − volume de ventes agressives) / volume total, sur 30 secondes. « Agressif » signifie que le trade prend la liquidité au carnet.",
   Horizon:
-    "Fenêtre de mémoire utilisée par les stratégies : 1 s, 5 s, 30 s, 1 min ou 3 min. Les flux, le carnet et la population effective ont leur propre mémoire par horizon. La durée des bougies se choisit séparément de 1 seconde à 3 minutes.",
+    "Fenêtre de retour utilisée par les stratégies : 1 s, 5 s, 30 s, 1 min ou 3 min. Cela ne change pas la durée des bougies, qui reste de cinq secondes. Les vues globales sont signalées comme telles.",
   VWAP: "Prix moyen pondéré par le volume sur les bougies affichées, calculé avec leur prix typique (haut + bas + clôture) / 3. Ce n’est pas un VWAP de journée entière.",
   SPREAD:
     "Écart entre meilleur ask et meilleur bid, rapporté au midpoint, en points de base. 1 bp = 0,01 %. Franchir le spread constitue une partie du coût d’exécution.",

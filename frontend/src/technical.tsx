@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { State } from "./types";
 import { Help } from "./help";
 import { fmt, signed, clock } from "./charts";
-const API = "http://127.0.0.1:8000";
+import { API } from "./api";
+
 type Cell = { bp: number; vol: number; consensus: number; flips: number };
 type Analysis = {
   timestamp: number;

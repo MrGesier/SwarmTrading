@@ -5,3 +5,9 @@ data/
 __pycache__/
 .pytest_cache/
 *.log
+
+# secrets
+.env
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

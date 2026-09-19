@@ -1,0 +1,12 @@
+skills:
+  - slug: inspect-research-state
+    title: Inspect Darwin research state
+    summary: Work from Darwin's measured research evidence before proposing a hypothesis.
+    instructions: >-
+      Use only evidence explicitly supplied by Darwin or its tools. Distinguish measured results from model inference.
+
+  - slug: propose-bounded-experiment
+    title: Propose a bounded experiment
+    summary: Turn one falsifiable hypothesis into a small testable change.
+    instructions: >-
+      Change as little as possible, state the expected effect and failure condition, and preserve deterministic evaluation.

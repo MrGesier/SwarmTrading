@@ -1,4 +1,3 @@
-import type {Horizon,Term} from "./multiscale";
 export type Candle = {
   time: number;
   open: number;
@@ -16,7 +15,6 @@ export type History = {
   swarm_entropy: number;
   slope: number;
   levels: number[][];
-  horizon_metrics?:Record<string,{market_entropy:number;swarm_entropy:number;effective:number|null;ready:boolean}>;
 };
 export type Strategy = {
   id: string;
@@ -35,8 +33,6 @@ export type Transition = {
   reasons: string[];
 };
 export type State = {
-  horizons?:Record<string,Horizon>;
-  term_structure?:Term;
   timestamp: number;
   mode: string;
   symbol: string;

@@ -88,7 +88,7 @@ export function PriceChart({
       className="price-chart"
       viewBox={`0 0 ${W} ${H}`}
       role="img"
-      aria-label="Candlesticks at selected display interval, volume and strategy trigger zones"
+      aria-label="Five-second candlesticks, volume and strategy trigger zones"
     >
       {[0, 1, 2, 3, 4].map((i) => {
         let p = hi - ((hi - lo) * i) / 4;

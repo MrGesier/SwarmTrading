@@ -3,44 +3,77 @@ from contextlib import asynccontextmanager
 from collections import deque
 import json
 import math
+import os
 from pathlib import Path
 import random
 import time
 import uuid
 
 import httpx
-import pyarrow as pa
-import pyarrow.parquet as pq
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+except ImportError:
+    pa = None
+    pq = None
 import websockets
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
 from engine import Engine, OrderBook, GENOMES, HORIZONS, SequenceGap
 from analysis import technical_analysis, cost_preview
+from darwin import DarwinSupervisor
+from execution.hyperliquid import HyperliquidExecutor
+from agents import agent_runtime_state, policy_state
+from agents.openbot_agui import COWORKERS as OPENBOT_COWORKERS, AGUIAdapter as OPENBOT_AGUI_ADAPTER, authorised as openbot_authorised, available as openbot_available, get_agent as get_openbot_agent, state as openbot_bridge_state
+from marketdata.hyperliquid import HyperliquidPublicStream
+from darwin.factory import factory_state, decorate_events
 
-DATA = Path(__file__).resolve().parents[1] / 'data'
-DATA.mkdir(exist_ok=True)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / '.env')
+DEFAULT_DATA_DIR = '/tmp/swarmtrade-data' if os.getenv('VERCEL') else str(PROJECT_ROOT / 'data')
+DATA = Path(os.getenv('DARWIN_DATA_DIR', DEFAULT_DATA_DIR))
+DATA.mkdir(parents=True, exist_ok=True)
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
 
 
 class Recorder:
     def __init__(self, symbol, mode):
+        self.enabled = os.getenv('DARWIN_RECORD_RAW', 'true').lower() in {'1','true','yes'}
+        self.max_parts = max(0, int(os.getenv('DARWIN_RECORD_MAX_PARTS', '240')))
         self.directory = DATA / f'{mode}-{symbol}-{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:6]}'
-        self.directory.mkdir()
+        if self.enabled:
+            self.directory.mkdir(exist_ok=True)
         self.rows = []
         self.part = 0
 
     def add(self, event, ts):
-        self.rows.append(dict(received=ts, payload=json.dumps(event, separators=(',', ':'))))
+        if self.enabled:
+            self.rows.append(dict(received=ts, payload=json.dumps(event, separators=(',', ':'))))
 
     async def flush(self):
-        if not self.rows:
+        if not self.enabled or not self.rows:
             return
         rows, self.rows = self.rows, []
         self.part += 1
-        path = self.directory / f'{self.part:06}.parquet'
-        await asyncio.to_thread(pq.write_table, pa.Table.from_pylist(rows), path, compression='zstd')
+        if pa is not None and pq is not None:
+            path = self.directory / f'{self.part:06}.parquet'
+            await asyncio.to_thread(pq.write_table, pa.Table.from_pylist(rows), path, compression='zstd')
+        else:
+            path = self.directory / f'{self.part:06}.jsonl'
+            payload = ''.join(json.dumps(row, separators=(',', ':')) + '\n' for row in rows)
+            await asyncio.to_thread(path.write_text, payload, encoding='utf-8')
+        if self.max_parts > 0:
+            files = sorted([*self.directory.glob('*.parquet'), *self.directory.glob('*.jsonl')], key=lambda x: x.name)
+            for old in files[:-self.max_parts]:
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
 
 
 class Session:
@@ -58,17 +91,26 @@ class Session:
         self.price = {'BTCUSDT': 64280, 'ETHUSDT': 2680, 'SOLUSDT': 148}[symbol]
         self.n = 0
         self.last_quote = None
+        self.darwin = DarwinSupervisor(symbol, mode, DATA)
+        self.darwin_error = ""
+        self.market_source = os.getenv("DARWIN_MARKET_SOURCE", "hyperliquid" if mode == "live" else "simulation").lower()
+        self.venue_context: dict[str, object] = {}
 
     def ingest(self, event, ts, record=True):
         if record:
             self.recorder.add(event, ts)
         if event['type'] == 'snapshot':
             self.book.snapshot(event['data'])
-            self.engine.memory.observe(self.book,ts)
+            if event.get('source') == 'hyperliquid':
+                # Hyperliquid l2Book is itself a complete pushed snapshot.
+                bids, asks = self.book.levels(1)
+                self.book.valid = bool(bids and asks and bids[0][0] < asks[0][0])
+                self.last_depth = ts
+        elif event['type'] == 'context':
+            self.venue_context = dict(event.get('data') or {})
         elif event['type'] == 'depth':
             if self.book.update(event['data']):
                 self.last_depth = ts
-                self.engine.memory.observe(self.book,ts)
         elif event['type'] == 'trade':
             d = event['data']
             self.engine.trade(ts, float(d['p']), float(d['q']), d['m'])
@@ -80,13 +122,23 @@ class Session:
         age = max(0, (ts-self.last_depth)*1000)
         health = dict(status='HEALTHY' if self.book.valid and age < 3000 and self.health == 'HEALTHY' else 'STALE' if self.latest else self.health,
                       age_ms=round(age) if self.last_depth else None, sequence=self.book.sequence, message=self.error,
-                      recording=self.recorder.directory.name)
+                      recording=self.recorder.directory.name if self.recorder.enabled else 'disabled')
         state = self.engine.calculate(self.book, ts, self.mode, self.symbol, health)
         if state:
+            if self.mode == 'live' and self.market_source == 'hyperliquid':
+                state['venue'] = 'HYPERLIQUID'
+                state['venue_context'] = self.venue_context
             self.latest = state
             self.states.append(state)
+            try:
+                self.darwin.observe(state)
+                if self.darwin.due():
+                    self.darwin.run_epoch()
+                self.darwin_error = ""
+            except Exception as exc:
+                self.darwin_error = f"{type(exc).__name__}: {str(exc)[:180]}"
 
-    def simulate(self, ts, derive=True):
+    def simulate(self, ts):
         self.n += 1
         drift = math.sin(self.n / 42) * .000026
         self.price *= 1 + drift + self.rng.gauss(0, .000047)
@@ -100,25 +152,28 @@ class Session:
         self.health = 'HEALTHY'
         for _ in range(3):
             self.ingest(dict(type='trade', data=dict(p=self.price, q=self.rng.uniform(.01, 1.5), m=self.rng.random() > .5+pressure*.4)), ts)
-        if derive:self.derive(ts)
+        self.derive(ts)
 
     async def run(self):
         try:
             if self.mode == 'simulation':
                 now = time.time()
                 for i in range(400):
-                    self.simulate(now - (400-i)*.5, derive=i>=350)
+                    self.simulate(now - (400-i)*.5)
                 while True:
                     self.simulate(time.time())
                     if len(self.recorder.rows) >= 400:
                         await self.recorder.flush()
                     await asyncio.sleep(.5)
             else:
-                await self.live()
+                if self.market_source == 'hyperliquid':
+                    await self.live_hyperliquid()
+                else:
+                    await self.live_binance()
         finally:
             await self.recorder.flush()
 
-    async def live(self):
+    async def live_binance(self):
         delay = 1
         while True:
             self.health = 'CONNECTING'
@@ -175,6 +230,34 @@ class Session:
                 delay = min(delay * 2, 30)
 
 
+    async def live_hyperliquid(self):
+        """Consume Hyperliquid public perp data and paper-trade the population."""
+        stream = HyperliquidPublicStream(self.symbol)
+        self.health = 'CONNECTING'
+        self.error = ''
+        last_emit = 0.0
+        async for ts, event in stream.events():
+            try:
+                self.ingest(event, ts)
+                if event['type'] == 'snapshot' and self.book.valid:
+                    self.health = 'HEALTHY'
+                    self.error = ''
+                now = time.time()
+                if self.book.valid and now - last_emit >= .5:
+                    self.derive(now)
+                    last_emit = now
+                if len(self.recorder.rows) >= 1000:
+                    await self.recorder.flush()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.health = 'RECONNECTING'
+                self.error = f'{type(exc).__name__}: {str(exc)[:180]}'
+                self.book.valid = False
+                await self.recorder.flush()
+
+
+
 sessions = {}
 
 
@@ -190,54 +273,40 @@ def get_session(symbol='BTCUSDT', mode='simulation'):
 
 @asynccontextmanager
 async def lifespan(app):
-    get_session()
+    autostart_symbol = os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT')
+    autostart_mode = os.getenv('DARWIN_AUTOSTART_MODE', 'live')
+    get_session(autostart_symbol, autostart_mode)
     yield
     for s in sessions.values():
         s.task.cancel()
     await asyncio.gather(*(s.task for s in sessions.values()), return_exceptions=True)
 
 
-app = FastAPI(title='SwarmTrade V0.3', lifespan=lifespan)
+hyperliquid_executor = HyperliquidExecutor()
+
+app = FastAPI(title='SwarmTrade V0.11 OpenAI Brain + OpenBot Bridge', lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=3)
-app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'], allow_methods=['GET','POST'], allow_headers=['Content-Type'])
+ALLOWED_ORIGINS = [x.strip() for x in os.getenv('DARWIN_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if x.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=['GET','POST'], allow_headers=['*'])
 
 
 @app.get('/api/health')
 def health():
-    return dict(status='ok', execution='read-only', version='0.3.0', project_root=str(Path(__file__).resolve().parents[1]))
+    return dict(status='ok', execution='paper+guarded-hyperliquid', market_source=os.getenv('DARWIN_MARKET_SOURCE','hyperliquid'), version='0.11.0')
 
 
 @app.get('/api/state')
-async def state(symbol: str = 'BTCUSDT', mode: str = 'simulation', prediction_horizon: int=5, display_interval: int=5):
+async def state(symbol: str = 'BTCUSDT', mode: str = 'simulation'):
     s = get_session(symbol, mode)
-    if prediction_horizon not in HORIZONS or display_interval not in [1,5,30,60,180]:raise HTTPException(400,'Unsupported horizon or display interval')
-    result=fresh_state(s)
-    if 'horizons' in result:
-        candles=[]
-        for candle in result['candles']:
-            bucket=int(candle['time']//display_interval)*display_interval
-            if candles and candles[-1]['time']==bucket:
-                last=candles[-1]
-                last.update(high=max(last['high'],candle['high']),low=min(last['low'],candle['low']),close=candle['close'],volume=last['volume']+candle['volume'])
-            else:candles.append({**candle,'time':bucket})
-        result={**result,'prediction_horizon':prediction_horizon,'display_interval':display_interval,
-                'candles':candles,
-                'selected_intent':result['horizons'][str(prediction_horizon)]['intent']}
-    return result
-
-
-def fresh_state(s):
-    if not s.latest:return dict(status=s.health,message=s.error)
-    if not s.book.valid or time.time()-s.last_depth>3:
-        return {**s.latest,'health':{**s.latest['health'],'status':'STALE','message':s.error},
-            'intent':{**s.latest['intent'],'state':'RISK_OFF'},
-            'horizons':{h:{**v,'intent':{**v['intent'],'state':'RISK_OFF','entry':'WAIT','direction':'NO_TRADE'}} for h,v in s.latest['horizons'].items()}}
-    return s.latest
+    return s.latest or dict(status=s.health, message=s.error)
 
 
 @app.websocket('/ws')
 async def stream(ws: WebSocket, symbol: str = 'BTCUSDT', mode: str = 'simulation'):
-    if ws.headers.get('origin') not in ['http://localhost:3000', 'http://127.0.0.1:3000']:
+    origin = ws.headers.get('origin')
+    forwarded_host = ws.headers.get('x-forwarded-host') or ws.headers.get('host')
+    same_host = bool(origin and forwarded_host and origin.split('://')[-1].rstrip('/') == forwarded_host)
+    if origin and origin not in ALLOWED_ORIGINS and not same_host:
         await ws.close(code=1008)
         return
     await ws.accept()
@@ -247,7 +316,9 @@ async def stream(ws: WebSocket, symbol: str = 'BTCUSDT', mode: str = 'simulation
     s = get_session(symbol, mode)
     try:
         while True:
-            await ws.send_json(fresh_state(s))
+            if s.latest and time.time() - s.last_depth > 3:
+                s.latest = {**s.latest, 'health': {**s.latest['health'], 'status':'STALE', 'age_ms':round((time.time()-s.last_depth)*1000), 'message':s.error}, 'intent':{**s.latest['intent'], 'state':'RISK_OFF'}}
+            await ws.send_json(s.latest or dict(status=s.health, message=s.error))
             await asyncio.sleep(.5)
     except (WebSocketDisconnect, RuntimeError):
         pass
@@ -327,7 +398,197 @@ async def export(symbol: str = 'BTCUSDT', mode: str = 'simulation'):
     return Response(json.dumps(s.latest), media_type='application/json', headers={'Content-Disposition':f'attachment; filename="swarmtrade-{symbol}-{mode}.json"'})
 
 
-@app.post('/api/flush')
-async def flush_recordings():
-    for s in sessions.values():await s.recorder.flush()
-    return dict(flushed=len(sessions))
+@app.get('/api/darwin/state')
+async def darwin_state(symbol: str='BTCUSDT', mode: str='simulation'):
+    s = get_session(symbol, mode)
+    result = s.darwin.state()
+    result['error'] = s.darwin_error
+    return result
+
+
+@app.get('/api/darwin/evolution')
+async def darwin_evolution(symbol: str='BTCUSDT', mode: str='simulation', limit: int=120):
+    s = get_session(symbol, mode)
+    return s.darwin.evolution_state(max(1, min(limit, 500)))
+
+
+@app.post('/api/darwin/epoch')
+async def darwin_epoch(symbol: str='BTCUSDT', mode: str='simulation', force: bool=True):
+    s = get_session(symbol, mode)
+    return s.darwin.run_epoch(force=force)
+
+
+@app.get('/api/darwin/memory')
+async def darwin_memory(symbol: str='BTCUSDT', mode: str='simulation', limit: int=20):
+    s = get_session(symbol, mode)
+    return dict(lessons=s.darwin.store.recent_lessons(max(1,min(limit,100))), epochs=s.darwin.store.recent_epochs(20))
+
+
+@app.get('/api/darwin/research')
+async def darwin_research(symbol: str='BTCUSDT', mode: str='simulation'):
+    s = get_session(symbol, mode)
+    result = s.darwin.research_state()
+    result['paper_only'] = not hyperliquid_executor.status().get('ready', False)
+    return result
+
+
+@app.get('/api/darwin/strategy/{strategy_id}')
+async def darwin_strategy(strategy_id: str, symbol: str='BTCUSDT', mode: str='simulation'):
+    s = get_session(symbol, mode)
+    detail = s.darwin.store.strategy_detail(strategy_id)
+    if not detail:
+        raise HTTPException(404, 'Unknown Darwin strategy')
+    return detail
+
+
+@app.get('/api/brains/state')
+async def brains_state(symbol: str='BTCUSDT', mode: str='simulation'):
+    s = get_session(symbol, mode)
+    return {
+        'policy': policy_state(),
+        'brains': s.darwin.brains.states(),
+        'usage_24h': s.darwin.store.agent_usage_summary(24),
+        'engineer': s.darwin.engineer_state(),
+    }
+
+
+class EngineerTaskRequest(BaseModel):
+    symbol: str = 'BTCUSDT'
+    mode: str = 'simulation'
+    objective: str | None = Field(default=None, max_length=1200)
+
+
+@app.get('/api/engineer/state')
+async def engineer_state(symbol: str='BTCUSDT', mode: str='simulation'):
+    s = get_session(symbol, mode)
+    return s.darwin.engineer_state()
+
+
+@app.post('/api/engineer/task')
+async def engineer_task(req: EngineerTaskRequest):
+    s = get_session(req.symbol, req.mode)
+    return s.darwin.prepare_engineer_task(req.objective)
+
+
+@app.get('/api/openbot/state')
+async def openbot_state():
+    return openbot_bridge_state()
+
+
+@app.get('/api/openbot/context/{agent_id}')
+async def openbot_context(agent_id: str, request: Request, symbol: str='BTCUSDT', mode: str='simulation'):
+    if agent_id not in OPENBOT_COWORKERS:
+        raise HTTPException(404, 'Unknown OpenBot coworker')
+    if not openbot_authorised(request.headers):
+        raise HTTPException(401, 'Unauthorised OpenBot context request')
+    s = get_session(symbol, mode)
+    return s.darwin.openbot_context(agent_id)
+
+
+@app.post('/ag-ui/{agent_id}')
+async def openbot_ag_ui(agent_id: str, request: Request):
+    if agent_id not in OPENBOT_COWORKERS:
+        raise HTTPException(404, 'Unknown OpenBot coworker')
+    if not openbot_available():
+        raise HTTPException(503, 'OpenBot AG-UI extras are not installed; install backend/requirements-openbot.txt')
+    if not openbot_authorised(request.headers):
+        raise HTTPException(401, 'Unauthorised OpenBot agent request')
+    return await OPENBOT_AGUI_ADAPTER.dispatch_request(request, agent=get_openbot_agent(agent_id))
+
+
+@app.get('/api/agents/state')
+async def agents_state(symbol: str='BTCUSDT', mode: str='simulation'):
+    s = get_session(symbol, mode)
+    dstate = s.darwin.state()
+    return agent_runtime_state(
+        darwin_state=dstate,
+        execution_state=hyperliquid_executor.status(),
+        market_state=s.latest,
+        darwin_error=s.darwin_error,
+        llm_states=s.darwin.brains.states(),
+    )
+
+
+
+@app.get('/api/factory/state')
+async def factory_state_api(symbol: str='BTCUSDT', mode: str='simulation'):
+    s = get_session(symbol, mode)
+    dstate = s.darwin.state()
+    agents = agent_runtime_state(
+        darwin_state=dstate,
+        execution_state=hyperliquid_executor.status(),
+        market_state=s.latest,
+        darwin_error=s.darwin_error,
+        llm_states=s.darwin.brains.states(),
+    )
+    return factory_state(s.darwin, agents, hyperliquid_executor.status(), s.latest)
+
+
+@app.get('/api/factory/events')
+async def factory_events(symbol: str='BTCUSDT', mode: str='simulation', limit: int=120, after_id: int | None=None):
+    s = get_session(symbol, mode)
+    events = s.darwin.store.recent_factory_events(limit=max(1, min(limit, 500)), after_id=after_id)
+    return {'events': decorate_events(events)}
+
+
+@app.websocket('/ws/factory')
+async def factory_stream(ws: WebSocket, symbol: str='BTCUSDT', mode: str='simulation'):
+    origin = ws.headers.get('origin')
+    forwarded_host = ws.headers.get('x-forwarded-host') or ws.headers.get('host')
+    same_host = bool(origin and forwarded_host and origin.split('://')[-1].rstrip('/') == forwarded_host)
+    if origin and origin not in ALLOWED_ORIGINS and not same_host:
+        await ws.close(code=1008)
+        return
+    if symbol not in SYMBOLS or mode not in ['simulation', 'live']:
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    s = get_session(symbol, mode)
+    last_id = 0
+    recent = s.darwin.store.recent_factory_events(50)
+    if recent:
+        last_id = recent[-1]['id']
+        await ws.send_json({'type': 'bootstrap', 'events': decorate_events(recent)})
+    try:
+        while True:
+            events = s.darwin.store.recent_factory_events(100, after_id=last_id)
+            if events:
+                last_id = events[-1]['id']
+                await ws.send_json({'type': 'events', 'events': decorate_events(events)})
+            else:
+                await ws.send_json({'type': 'heartbeat', 'ts': time.time()})
+            await asyncio.sleep(1.0)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+
+@app.get('/api/execution/hyperliquid/status')
+def hyperliquid_status():
+    return hyperliquid_executor.status()
+
+
+@app.get('/api/runtime')
+def runtime_state():
+    return {
+        'version': '0.11.0',
+        'data_dir': str(DATA),
+        'autostart_symbol': os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT'),
+        'autostart_mode': os.getenv('DARWIN_AUTOSTART_MODE', 'live'),
+        'market_source': os.getenv('DARWIN_MARKET_SOURCE', 'hyperliquid'),
+        'paper_only': not hyperliquid_executor.status().get('ready', False),
+    }
+
+# In Docker/Railway the Vite build is copied here and served by the same process.
+FRONTEND_DIST = PROJECT_ROOT / 'frontend' / 'dist'
+if FRONTEND_DIST.exists():
+    app.mount('/assets', StaticFiles(directory=FRONTEND_DIST / 'assets'), name='assets')
+
+    @app.get('/')
+    def frontend_index():
+        return FileResponse(FRONTEND_DIST / 'index.html')
+
+    @app.get('/{path:path}')
+    def frontend_spa(path: str):
+        candidate = FRONTEND_DIST / path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / 'index.html')

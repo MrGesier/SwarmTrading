@@ -1,0 +1,3 @@
+# Create conversational channels from the OpenBot UI once the four coworkers answer.
+# Keeping this empty avoids relying on package-declared channel membership semantics.
+channels: []

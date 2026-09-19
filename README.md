@@ -1,19 +1,10 @@
-# Swarm Trade by Mister Gésier — V0.3
+# Swarm Trade by Mister Gésier — V0.11 Evolution Observatory + Factory Crew
 
-A local, read-only market intent terminal with a Pyrenean mountain / market-line identity built from the V0.2 Product Spec. Python/FastAPI computes the shared state; React/TypeScript displays it. No exchange keys, account access, or live order execution.
-
-> **Project goal:** build an explainable, multi-scale market-intent engine that combines order-book microstructure, strategy swarms, entropy, liquidity geometry and horizon-aware forecasting. The current build is research/paper-analysis software only; it does not place live orders.
-
-## Roadmap / design docs
-
-- [`docs/V0.2_PRODUCT_SPEC.md`](docs/V0.2_PRODUCT_SPEC.md) — terminal, Crowd Shadow, trigger surfaces, liquidity landscape and replay architecture.
-- [`docs/V0.3_MULTISCALE_ALPHA.md`](docs/V0.3_MULTISCALE_ALPHA.md) — true multi-horizon state, consensus term structure, propagation front, trade odds and future data sweeps.
-- [`AGENTS.md`](AGENTS.md) — implementation rules and priorities for Codex/AI coding agents.
-
+A local market-intent and strategy-evolution terminal with a Pyrenean mountain / market-line identity. Python/FastAPI computes the shared state and Darwin paper experiments; React/TypeScript displays them. Authenticated execution is isolated behind a disabled-by-default Hyperliquid adapter.
 
 ## Start
 
-On Windows, double-click **Start SwarmTrade.cmd**. Requires Python 3.12+ and Node.js 20.19+ (or 22.12+). The launcher installs missing dependencies, starts hidden local servers, and opens **http://localhost:3000**. The backend API is **http://127.0.0.1:8000/docs**. Logs live in `data/`.
+On Windows, extract the ZIP first, then double-click **Start SwarmTrade.cmd**. Requires Python 3.11+ and Node.js 22 LTS for the first frontend build. The launcher auto-detects Python, installs/repairs the lightweight backend runtime, builds the frontend once, then runs a **single FastAPI process** and opens **http://127.0.0.1:8000**. API docs are at **http://127.0.0.1:8000/docs**. If launch fails, the command window stays open and `data/launcher.log` / `data/backend-error.log` contain the reason. Use **Check SwarmTrade.cmd** for diagnostics or **Repair SwarmTrade.cmd** for a clean dependency rebuild without deleting Darwin data.
 
 Alternatively, run these in separate terminals from this project:
 
@@ -32,9 +23,9 @@ For manual setup: `python -m venv .venv`, then `.venv\Scripts\python.exe -m pip 
 ## Use
 
 - **Simulation** starts immediately with deterministic synthetic market events. It is always visibly labeled. These prices are not current market prices.
-- Choose **Binance live** for public spot depth, trades, and book-ticker streams. BTCUSDT, ETHUSDT, and SOLUSDT are supported. Live mode never silently falls back to simulation.
-- Select a **1s, 5s, 30s, 1 minute, or 3 minute horizon** to scope the consensus, swarm bars, and strategy table. Intent, entropy, trigger density and effective count now use the selected horizon’s own feature and signal histories.
-- **Market cockpit** shows independently selectable 1s–3m OHLCV candles built from received trades, received-window VWAP, a midpoint and trigger overlay, recorded resting-liquidity heatmap, book metrics, swarm, entropy, and explanatory signal transitions.
+- Choose **Live** for Hyperliquid public perp `l2Book`, trades and asset-context streams. BTCUSDT, ETHUSDT, and SOLUSDT map to BTC, ETH and SOL perps. Live mode is still paper execution unless the separate Hyperliquid execution gate is explicitly enabled.
+- Select a **1s, 5s, 30s, 1 minute, or 3 minute horizon** to scope the consensus, swarm bars, and strategy table. Market intent, entropy, trigger density, and effective count use the full population and are global metrics.
+- **Market cockpit** shows 5-second OHLCV candles built from received trades, received-window VWAP, a midpoint and trigger overlay, recorded resting-liquidity heatmap, book metrics, swarm, entropy, and explanatory signal transitions.
 - **Intent lab** reevaluates the same genomes for changes to price, volatility, and flow. It includes a phase plane, consensus by horizon, and liquidity along trigger paths.
 - **Swarm lab** filters strategies by family and horizon. Click a genome for its actual parameters, signal, and decorrelated weight.
 - **Replay lab → Capture session** freezes up to the latest 300 derived frames from the current session. Play, pause, change speed, or seek with the slider/candles. Every panel uses the selected historical state. Reloading a capture replaces the replay window.
@@ -42,13 +33,13 @@ For manual setup: `python -m venv .venv`, then `.venv\Scripts\python.exe -m pip 
 
 ## Engine and data
 
-`backend/engine.py` contains the exchange-independent order book and engine. `backend/main.py` contains the Binance adapter, seeded simulator, Parquet recorder and API. `backend/replay.py` rebuilds states from raw events with the same engine.
+`backend/engine.py` contains the exchange-independent order book and engine. `backend/marketdata/hyperliquid.py` contains the default cloud market-data adapter; `backend/main.py` hosts the seeded simulator, optional legacy Binance adapter, Parquet recorder and API. `backend/replay.py` rebuilds states from raw events with the same engine.
 
 Binance depth initialization opens and buffers the stream before the REST snapshot, discards already-covered events, requires an update bridging `lastUpdateId + 1`, checks every following sequence, and resnapshots after gaps, crossed books, queue overflow, or reconnect. The book is not healthy until bridged. Data more than three seconds old triggers RISK_OFF. Frontend disconnects also visibly suppress intent.
 
 The public adapter follows Binance's [Spot WebSocket streams documentation](https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams). Exchange connectivity depends on network and regional access.
 
-Raw snapshot, depth, trade, quote, and engine-clock events are recorded under `data/<mode>-<symbol>-<session>/` as Zstandard-compressed Parquet parts. Each part stores receive time and the original event payload. Recording happens for simulation as well as live data. Buffered events flush at batch thresholds, export, and graceful shutdown; abrupt process termination can lose the current unflushed batch. Recordings are retained until manually removed; monitor available disk space during extended runs.
+Raw snapshot, depth, trade, quote, and engine-clock events are recorded under `data/<mode>-<symbol>-<session>/` as Zstandard-compressed Parquet parts. Each part stores receive time and the original event payload. Recording happens for simulation as well as live data. Buffered events flush at batch thresholds, export, and graceful shutdown; abrupt process termination can lose the current unflushed batch. Raw recording is configurable with `DARWIN_RECORD_RAW`; each session keeps at most `DARWIN_RECORD_MAX_PARTS` part files (240 by default) to prevent unbounded disk growth. Set the cap to `0` only if you intentionally want unlimited parts.
 
 Replay a persisted recording:
 
@@ -71,7 +62,7 @@ The browser's replay uses captured state frames; the CLI reconstructs states fro
 - Candles begin when the stream starts; no historical candles are mixed into a live session. Volatility is the standard deviation of recent sampled log returns in basis points per calculation interval, not annualized volatility.
 - Live observation and recording continue for each selected symbol/mode for the backend's lifetime. Derived state memory is bounded at 1,200 frames per session. Stop the backend to stop recording.
 
-The spec's V0.3–V0.5 and later modules remain future work: paper execution and realized cost accounting, calibrated scenario probabilities, historical analog search, learned weights/meta-models, strategy evolution, multi-input trigger surfaces beyond price × volatility, multi-venue/futures feeds, funding/OI, and authenticated execution. No placeholders pretend to implement these.
+Still future work: calibrated scenario probabilities, historical analog search, multi-input trigger surfaces, robust account reconciliation and explicitly governed champion-to-execution promotion. V0.11 adds a persistent Evolution Observatory and role-specific Factory crew on top of V0.10 Genome V2, while preserving the OpenAI-Brain / deterministic-capital architecture.
 
 ## Verify
 
@@ -93,19 +84,182 @@ Both servers bind to loopback. The app is intended for a trusted single-user loc
 - **Five horizons:** 1s / 5s / 30s / 60s / 180s. Each requires the corresponding observed history span before its genomes leave neutral. Simulation seeds 200 seconds of synthetic history; live mode waits for real observations. A reconnect resets the engine’s history and warm-up rather than bridging unknown data gaps. The selected consensus sparkline now uses that horizon’s actual historical consensus.
 - **Trigger surface:** 54 counterfactual states, 9 price offsets from −24 to +24 bp and 6 volatility multipliers from 0.5× to 2×. Uses selected-horizon weights and the same strategy functions. Recomputed every two seconds in Intent Lab.
 - **Consensus fragility:** minimal contrary price shift, searched in 1 bp steps up to 50 bp, that changes the selected consensus sign. Neutral baselines (absolute consensus < 0.05) and out-of-range inversions are distinguished.
-- **Execution-cost preview:** walks the visible bid and ask levels for a configurable notional and fee assumption. Shows VWAP, spread/depth cost and fill fraction. Midpoint is taken from the same book used for the walk. This is a snapshot estimate, not paper execution; it excludes latency and adverse selection. No orders are submitted.
+- **Execution-cost preview:** walks the visible bid and ask levels for a configurable notional and fee assumption. Shows VWAP, spread/depth cost and fill fraction. Midpoint is taken from the same book used for the walk. This remains a snapshot estimate for the cockpit; Darwin has a separate paper-execution loop. It excludes latency and adverse selection. No real orders are submitted by this preview.
 - **Visible-liquidity metrics:** top-five concentration within the top forty levels and largest adjacent price gap above/below the market.
 
-The surface and fragility are local model sensitivities. They do not provide calibrated probabilities. Flow, OFI, book pressure and entropy now have separate time windows per horizon. Horizons still share the same market observations; statistical independence is not claimed.
+The surface and fragility are local model sensitivities. They do not provide calibrated probabilities. Short-horizon flow and book features remain shared context across horizons; the horizon-specific return and its normalization differ. The five horizons are not five fully independent forecasting models.
 
-## V0.3 delivered
+## V0.4 — Darwin agentic evolution loop
 
-- Separate candle interval, prediction horizon and optional slower context.
-- Local horizon memory, effective population, entropy and trigger sensitivity.
-- Consensus term structure and horizon/time propagation heatmap.
-- Direction and short entry alignment shown separately, with stale-data risk override.
-- Offline cost-adjusted triple-barrier labels and purged chronological calibration evaluation in `backend/forecasting.py`. Probabilities remain unavailable in the live app.
+SwarmTrade now contains a **paper-first strategy evolution engine**. The original 320 transparent genomes are the generation-0 population. Every active genome receives the same market state and trades an isolated paper account using visible order-book levels plus a configurable fee assumption. This gives Darwin comparable PnL, return, turnover, drawdown, closed-trade count and win-rate evidence instead of asking an LLM which strategy “looks best”.
 
-Desktop installation: run `powershell -ExecutionPolicy Bypass -File install-desktop.ps1`. Then use **SwarmTrading - Mister Gesier** to start and **Arreter SwarmTrading** to flush recordings and stop. The installed build needs no terminal commands. Do not move its folder after creating shortcuts.
+Open **Darwin lab** in the sidebar to see the live leaderboard, current champion, selection history, cumulative lessons and Hyperliquid execution status. A Judge epoch can be triggered manually for research; the automatic interval defaults to 24 hours (`DARWIN_EPOCH_SECONDS=86400`). A Judge epoch only runs when at least one strategy has the configured minimum sample and closed-trade evidence. At an accepted epoch Darwin:
 
-See `docs/VALIDATION_V0.3.md` for validation scope and research limits.
+1. freezes the common paper window and closes remaining paper positions through the visible book;
+2. computes risk-adjusted fitness deterministically;
+3. promotes a champion when promotion evidence is sufficient;
+4. kills sufficiently bad strategies in the lower tail;
+5. mutates gain/threshold around the strongest survivors to create challengers;
+6. writes evaluations and structured lessons to a per-market SQLite memory database;
+7. resets surviving paper accounts so the next generation is compared over a common window.
+
+The long-term memory is stored under `data/darwin-<mode>-<symbol>.sqlite`. It records strategy lineage, frozen evaluations, selection epochs and evidence-backed lessons. Conversation text is not used as performance memory.
+
+### Hyperliquid boundary
+
+`backend/execution/hyperliquid.py` integrates the official `hyperliquid-python-sdk`. **Execution is disabled by default.** V0.4 does not automatically send a Darwin champion to the exchange. This is intentional: the current live market-data adapter is Binance spot while the intended execution venue is Hyperliquid perps, so promotion to real trading should wait until the Hyperliquid market-data/reconciliation path is added and testnet behaviour is validated.
+
+Copy `.env.example` to `.env` when you are ready to configure the connector. Prefer a dedicated Hyperliquid API wallet. Mainnet requires all of the following: `HYPERLIQUID_ENABLED=true`, `HYPERLIQUID_NETWORK=mainnet`, credentials, and the explicit acknowledgement `HYPERLIQUID_MAINNET_ACK=I_UNDERSTAND_LIVE_TRADING`. Keep `.env` private; it is git-ignored.
+
+Useful Darwin environment variables are documented in `.env.example`. Defaults are intentionally conservative and are research assumptions, not claims about current exchange fees or expected profitability.
+
+
+### V0.4 human agent map
+
+The **Darwin Lab** now exposes the architecture as named, color-coded agents. This is not cosmetic: the backend publishes the same registry at `/api/agents/state`, including the exact code path and capital permission for every agent.
+
+| Color | Agent | Role | Code | Capital permission |
+|---|---|---|---|---|
+| `#9B7BFF` | ATLAS | CEO / supervisor | `backend/darwin/supervisor.py` | none |
+| `#55C7FF` | CURIE | scientist / experiment hypothesis | `backend/darwin/scientist.py` | none |
+| `#43D69E` | EVOLVE | strategist / mutation | `backend/darwin/strategist.py` | none |
+| `#38D7E8` | FORGE | paper worker | `backend/darwin/paper.py` | paper only |
+| `#F4C95D` | JUDGE | deterministic evaluator | `backend/darwin/judge.py` | none |
+| `#EE78C5` | MNEMOSYNE | long-term memory | `backend/darwin/memory.py`, `store.py` | none |
+| `#FF6B6B` | CERBERUS | hard risk gate | `backend/execution/hyperliquid.py` | gatekeeper |
+| `#FF9F43` | HERMES | Hyperliquid executor | `backend/execution/hyperliquid.py` | testnet or explicitly guarded live |
+
+The research loop is `ATLAS → CURIE → EVOLVE → FORGE → JUDGE → MNEMOSYNE → ATLAS`. The capital path is separate: an approved intent must pass `CERBERUS → HERMES`. CURIE/EVOLVE may later use an LLM to propose hypotheses, but JUDGE, CERBERUS and HERMES remain deterministic boundaries.
+
+---
+
+## V0.5 — Agentic cloud paper lab
+
+V0.5 adds a cloud-ready Darwin runtime. The safe default is **real Hyperliquid mainnet public market data + paper execution only**. No wallet is needed to run research.
+
+### Runtime architecture
+
+| Agent | LLM | Responsibility | Deterministic boundary |
+|---|---|---|---|
+| ATLAS | GPT-5.6 Sol | Chooses which evidence-rich parents deserve the next experiment budget | Cannot place orders or rewrite metrics |
+| CURIE | GPT-5.6 Sol | Writes one falsifiable controlled experiment | Only `threshold` or `gain` can be tested in V0.5 |
+| EVOLVE | GPT-5.6 Luna | Refines local mutation factors | `StrategistAgent` clamps and constructs children |
+| FORGE | GPT-5.6 Luna | Audits paper-execution/regime quality | Fills/PnL are calculated by `PaperPopulation` |
+| JUDGE | GPT-5.6 Luna | Audits overfit/sample risk | KEEP/KILL/SCALE is frozen by deterministic `judge.py` |
+| MNEMOSYNE | GPT-5.6 Luna | Compresses epochs into reusable lessons | Raw epoch evidence stays in SQLite |
+| CERBERUS | GPT-5.6 Luna | Reviews an external-order intent | Hard risk checks have final authority |
+| HERMES | GPT-5.6 Luna | Explains an already approved execution | Cannot change side, size or venue |
+
+The eight brains live in `backend/agents/roles.py`; the shared structured-output runtime is `backend/agents/llm.py`.
+
+### Hyperliquid data
+
+`backend/marketdata/hyperliquid.py` subscribes to the public `l2Book`, `trades`, and `activeAssetCtx` feeds. `Session` normalizes these events into the existing SwarmTrade engine, so all genomes see the same Hyperliquid perp market stream.
+
+Safe cloud defaults:
+
+```text
+DARWIN_AUTOSTART_SYMBOL=BTCUSDT
+DARWIN_AUTOSTART_MODE=live
+DARWIN_MARKET_SOURCE=hyperliquid
+HYPERLIQUID_DATA_NETWORK=mainnet
+HYPERLIQUID_ENABLED=false
+```
+
+`live` means **live market data**, not live capital. Execution is still paper while `HYPERLIQUID_ENABLED=false`.
+
+### LLM activation
+
+All eight agents use one Vercel AI Gateway key. Add only this secret to the host:
+
+```text
+AI_GATEWAY_API_KEY=...
+```
+
+Without the key, Darwin continues paper trading with deterministic fallbacks and the UI reports each brain as `WAITING_KEY`. This makes an LLM outage fail safe rather than stop market observation.
+
+### Railway deployment
+
+The repository includes `Dockerfile` and `railway.toml`. The Docker image:
+
+1. builds the Vite dashboard,
+2. installs the Python backend,
+3. serves UI + API from one FastAPI process,
+4. starts the Hyperliquid paper session automatically,
+5. stores Darwin SQLite state under `DARWIN_DATA_DIR` (`/data` in Docker).
+
+For durable memory across redeployments, attach a Railway Volume at `/data`.
+
+Health endpoint: `/api/health`.
+
+### Capital boundary
+
+Paper research starts without credentials. Do **not** set `HYPERLIQUID_ENABLED=true` for the research deployment. Hyperliquid wallet credentials are intentionally unnecessary for V0.5 paper operation.
+
+
+## V0.6 — Research Desk and robustness gates
+
+Darwin V0.6 treats strategy search as a multiple-testing research problem rather than a raw leaderboard. FORGE now records trade expectancy, profit factor, payoff ratio, per-trade dispersion/z-score and entry-regime results. JUDGE keeps both raw fitness and evidence-weighted fitness; positive results are shrunk toward zero until trade count and elapsed-time evidence accumulate. With hundreds of simultaneous genomes, `SCALE` also requires the champion's closed-trade z-score to clear the deterministic `sqrt(2 log M)` selection-bias guard (`M` = active strategies). This is a conservative heuristic guardrail, not a formal p-value.
+
+A second robustness gate recalculates the result under a configurable degraded-fee assumption (`DARWIN_FEE_STRESS_MULTIPLIER`, default 1.5×). A strategy cannot `SCALE` if this stressed result is non-positive when `DARWIN_REQUIRE_POSITIVE_FEE_STRESS=true`. The live Research Cockpit shows evidence-ready counts, the current z threshold, regime, market benchmark, LLM calls/tokens, and the experiment ledger.
+
+Every controlled CURIE/EVOLVE test is persisted in the `experiments` table with parent, children, parameter, factors, hypothesis, confidence, winner and resolved evidence. Clicking a genome in Darwin Lab opens its lineage and frozen epoch history. LLM calls are persisted in `agent_runs`; the dashboard reports 24-hour calls and token usage. Strategy history is therefore inspectable independently from the current conversation.
+
+The population is bounded by `DARWIN_MAX_ACTIVE_STRATEGIES` (default 400) and `DARWIN_MAX_NEW_PER_EPOCH` (default 12). `DARWIN_AUTO_EPOCH_ENABLED=false` pauses autonomous evolution while allowing paper observation to continue. A common-window BTC market benchmark is reset with every epoch and the leaderboard reports `alpha_vs_market_bps`; this benchmark is diagnostic and does not directly alter selection.
+
+
+## V0.7 — Darwin Factory / Troll Mode
+
+A second Darwin UI is available at `/factory`. It visualizes the real agent loop as an animated troll factory. Events are persisted in SQLite and streamed over `/ws/factory`; the page includes impact inspection, strategy lineage inspection and event playback. See `FACTORY_ARCHITECTURE.md`.
+
+
+## V0.9 — OpenAI Brain / Codex Engineer
+
+Darwin now separates **reasoning**, **measurement**, **capital authority**, and **software engineering**. ATLAS and CURIE default to `gpt-5.6-sol`; EVOLVE and the optional JUDGE critic default to `gpt-5.6-terra`; MNEMOSYNE defaults to `gpt-5.6-luna`. FORGE, CERBERUS and HERMES are true deterministic components and do not call a model to calculate paper PnL, authorize risk, or submit an order.
+
+The common `AgentBrain` runtime supports direct OpenAI Responses API structured JSON, the previous optional Vercel AI Gateway path, and deterministic brains. Per-agent runtime/model/reasoning can be overridden through environment variables. Every model run stores runtime, provider, model, reasoning effort, prompt version, token usage, latency, result status and an estimated API cost; secrets are never returned by the state endpoints.
+
+A separate **CODEX ENGINEER** sits above the Troll Factory. It can prepare an auditable software-engineering task pack from current Darwin evidence (`POST /api/engineer/task`) but has `CODE_ONLY_NO_CAPITAL` authority, no exchange credentials, and `auto_apply=false`. V0.9 intentionally does not let Codex merge/deploy changes or alter risk/execution automatically.
+
+Useful V0.9 endpoints:
+
+- `GET /api/brains/state?symbol=BTCUSDT&mode=simulation` — brain policy, runtime/model status, usage/cost and engineer state.
+- `GET /api/engineer/state` — CODEX ENGINEER boundary and recent prepared tasks.
+- `POST /api/engineer/task` — freeze a code-only task pack from current research evidence.
+- `GET /api/factory/state` — Troll Factory state including brain classes and Codex Engineer.
+
+See `OPENAI_BRAIN_ARCHITECTURE.md`, `AGENT_ARCHITECTURE.md`, `FACTORY_ARCHITECTURE.md`, `CODEX_ENGINEER.md` and `CODEX_HANDOFF.md`.
+
+For a local engineering pass, double-click **Run Codex Engineer.cmd** after installing/logging into Codex CLI. The script uses `codex exec --sandbox workspace-write`, exports a current Darwin task pack when the local API is reachable, and explicitly forbids automatic trading/deployment changes. Codex also discovers the root `AGENTS.md` contract automatically.
+
+## V0.9 — OpenBot Bridge
+
+V0.9 adds an optional bridge to `CopilotKit/OpenBot` for the four cognitive coworkers: ATLAS, CURIE, EVOLVE and MNEMOSYNE. OpenBot remains outside the authoritative trading/capital path. See `OPENBOT_BRIDGE.md`.
+
+Install only when using OpenBot:
+
+```bash
+pip install -r backend/requirements-openbot.txt
+```
+
+Bridge status:
+
+```text
+GET /api/openbot/state
+```
+
+
+## V0.10 — Genome V2 + Vibe Factory
+
+V0.10 expands Darwin from threshold/gain tuning into bounded execution-policy research while keeping FORGE deterministic. See `GENOME_V2.md`. CURIE can now test one of eight genes at a time, and the Factory visualizes the resulting hypothesis → mutation → evidence → Judge → memory flow with moving event tokens, Judge stamps, champion bursts, filters and a playback scrubber.
+
+OpenBot coworkers remain advisory-only but can now request redacted research context from `GET /api/openbot/context/{agent_id}` using the configured OpenBot token. The response intentionally excludes exchange credentials and execution methods.
+
+Raw event recording can be disabled or bounded with `DARWIN_RECORD_RAW` and `DARWIN_RECORD_MAX_PARTS`.
+
+
+## V0.11 — Evolution Observatory + Factory Crew
+
+V0.11 makes Darwin's progress auditable over time instead of showing only the current leaderboard. `GET /api/darwin/evolution` reconstructs an epoch-by-epoch history from SQLite: champion alpha, fitness, fee-stress survival, evidence weight, drawdown, generations, family wins and Genome V2 mutation pressure. The Factory embeds the same object and displays an Evolution Observatory with `IMPROVING / FLAT / REGRESSING` trend states. These are explicitly paper-research metrics, not a prediction of future live profitability.
+
+The visual identities are also role-specific rather than eight identical trolls: Atlas Owl, Curie Frog, Evolve Chameleon, Forge Bot, Judge Lion, Memory Octopus, Cerberus Hound, Hermes Bird and Codex Raccoon. See `EVOLUTION_OBSERVATORY.md` and `V0.11_CHANGELOG.md`.
