@@ -11,7 +11,7 @@ type FactoryState = {
   ts:number; symbol:string; mode:string; population:number; historical_population:number;
   market:{health:string; price?:number|null; regime:string; benchmark_return_bps:number};
   champion?:{id:string; metrics:any}|null; agents:Agent[]; experiments:any[]; leaderboard:any[]; lessons:any[];
-  status_counts:Record<string,number>; execution:any; research:any; evolution?:any; engineer?:any; brain_policy?:any; openbot?:any;
+  pnl?:any; pnl_history?:any[]; cycle?:any; status_counts:Record<string,number>; execution:any; research:any; evolution?:any; engineer?:any; brain_policy?:any; openbot?:any;
 };
 
 const persona: Record<string,{emoji:string; badge:string; title:string; room:string; species:string}> = {
@@ -142,6 +142,25 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <div><small>OPENAI 24H</small><b>${fmt(state.research?.llm_usage_24h?.estimated_cost_usd??0,4)}</b><span>{state.research?.llm_usage_24h?.calls??0} calls</span></div>
     </div>
 
+    <section className="evolution-observatory" aria-label="Paper PnL">
+      <h3>PnL paper net de frais · fenêtre en cours</h3>
+      <p>Moyenne par stratégie indépendante, pas un portefeuille investi. Les courbes repartent à zéro à chaque cycle ; les fenêtres précédentes restent dans les comparaisons ci-dessous.</p>
+      <div className="factory-strip">
+        <div><small>STRATÉGIES ACTIVES · NET</small><b>{fmt(state.pnl?.active?.mean_net_usd)} USD</b><span>{fmt(state.pnl?.active?.mean_net_bps)} bp · {state.pnl?.active?.count??0} stratégies</span></div>
+        <div><small>FRAIS MOYENS DÉDUITS</small><b>{fmt(state.pnl?.active?.mean_fees_usd)} USD</b><span>{state.pnl?.fee_bps_per_fill??"—"} bp par fill · nominal {state.pnl?.notional_per_strategy_usd??"—"} USD/stratégie</span></div>
+        <div><small>TÉMOIN G0 · NET</small><b>{fmt(state.pnl?.fixed_g0?.mean_net_usd)} USD</b><span>{state.pnl?.fixed_g0?.count??0} stratégies conservées</span></div>
+        <div><small>DESCENDANTS · NET</small><b>{fmt(state.pnl?.descendants?.mean_net_usd)} USD</b><span>{state.pnl?.descendants?.count??0} descendants</span></div>
+      </div>
+      <div className="evo-sparks">{["active","fixed_g0","descendants"].map(group=><Sparkline key={group} label={`${group} · net USD`} values={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start&&x[group]?.mean_net_usd!=null).map(x=>x[group].mean_net_usd)}/>)}</div>
+      {!state.pnl?.control_window_matches && <p role="status">Attention : le témoin G0 a démarré sur une autre fenêtre. Ses chiffres actuels ne sont pas comparables aux descendants ; attendre un cycle commun complet.</p>}
+      <p>Historique échantillonné chaque minute. Spread, profondeur visible et frais modélisés ; funding et impact réel non modélisés. Aucune aptitude au live démontrée.</p>
+    </section>
+    <section className="factory-strip" aria-label="Research cycle">
+      <div><small>RESEARCH CYCLE</small><b>{state.cycle?.status??"WAITING"}</b><span>{Math.ceil((state.cycle?.seconds_remaining??0)/60)} min until scheduled selection</span></div>
+      <div><small>EVIDENCE READY</small><b>{state.cycle?.eligible??0} / {state.cycle?.population??0}</b><span>Requires {state.cycle?.min_sample_seconds??"—"} seconds and {state.cycle?.min_closed_trades??"—"} closed trades per strategy</span></div>
+      <div><small>RECURSIVE LOOP</small><b>G0 → G{state.cycle?.max_generation??0}</b><span>Measure → select → mutate one gene → test next window → repeat</span></div>
+      <div><small>LAST COMPLETED CYCLE</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
+    </section>
     <section className="factory-shell">
       <aside className="factory-side left">
         <div className="factory-panel-title"><BrainCircuit size={16}/> Factory pulse</div>
@@ -215,7 +234,13 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
     </section>
 
     <section className="factory-playback">
-      <h3>G0 vs descendants — same epoch</h3>
+            <div className="evolution-chart-card">
+        <h4>Frozen G0 control vs descendants · net paper returns</h4>
+        <p>All original G0 strategies remain in the control. Descendants are measured in the window after creation, before selection. Same fees; uncertainty unestimated. Historical windows are not backfilled.</p>
+        {!(evolution.fixed_baseline_comparisons??[]).length && <p>Waiting for the first completed cycle with the new G0 control. A matched comparison needs descendants and a full common window.</p>}
+        <div style={{overflowX:"auto"}}><table><thead><tr><th>Epoch / status</th><th>Window s</th><th>G0 net bp / trades</th><th>Descendants net bp / trades</th><th>Market bp</th><th>Mean drawdown G0 / descendants bp</th></tr></thead><tbody>{(evolution.fixed_baseline_comparisons??[]).slice(-12).map((r:any)=><tr key={r.epoch_id} title={r.reason}><td>{r.epoch_id} · {r.status}</td><td>{fmt(r.sample_seconds,0)}</td><td>{fmt(r.g0_mean_return_bps)} / {r.g0_trades}</td><td>{fmt(r.descendant_mean_return_bps)} / {r.descendant_trades}</td><td>{fmt(r.market_return_bps)}</td><td>{fmt(r.g0_mean_drawdown_bps)} / {fmt(r.descendant_mean_drawdown_bps)}</td></tr>)}</tbody></table></div>
+      </div>
+<h3>G0 vs descendants — same epoch</h3>
       <p>Selected surviving cohorts; equal engine fee policy. Uncertainty unestimated. Missing G0 are not imputed; this does not establish causal progress.</p>
       <div style={{overflowX:"auto"}}><table><thead><tr><th>Epoch</th><th>Window</th><th>G0 mean bp / trades</th><th>Descendants mean bp / trades</th><th>Status</th></tr></thead><tbody>{(evolution.baseline_comparisons??[]).slice(-12).map((r:any)=><tr key={r.epoch_id}><td>{r.epoch_id}</td><td>{r.sample_seconds??"—"} s</td><td>{r.g0_mean_return_bps==null?"—":fmt(r.g0_mean_return_bps)} / {r.g0_trades}</td><td>{r.descendant_mean_return_bps==null?"—":fmt(r.descendant_mean_return_bps)} / {r.descendant_trades}</td><td>{r.status}</td></tr>)}</tbody></table></div>
       <div className="playback-head"><div><b>Factory recorder</b><small>{events.length} persisted events loaded · {replaying?(playback?"PLAYBACK":"PAUSED"):"LIVE"}</small></div><div className="playback-controls"><button onClick={()=>{setPlayback(false);setReplaying(false);setCursor(-1)}}><RotateCcw aria-label="Return to live" size={14}/></button><button aria-label={playback?"Pause playback":"Play playback"} className={playback?"active":""} onClick={()=>{if(!replaying){setReplayEvents(events);setReplaying(true);setCursor(0)}else if(cursor>=timeline.length-1){setCursor(0)}setPlayback(!playback)}}>{playback?<Pause size={15}/>:<Play size={15}/>}</button><button onClick={()=>setSpeed(speed===1?2:speed===2?4:speed===4?8:1)}><FastForward size={14}/> x{speed}</button></div></div>

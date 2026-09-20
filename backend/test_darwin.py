@@ -298,6 +298,7 @@ def test_openai_responses_payload_is_schema_constrained(monkeypatch):
             captured["json"] = json
             return FakeResponse()
 
+    monkeypatch.setenv("DARWIN_LLM_ENABLED", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("DARWIN_BRAIN_ATLAS", "openai")
     monkeypatch.setattr(llm_mod.httpx, "Client", FakeClient)

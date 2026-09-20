@@ -191,6 +191,12 @@ def test_three_research_epochs_survive_restart(tmp_path, monkeypatch):
         before = supervisor.evolution_state(20)
         assert before['epochs_observed'] == 3
         assert before['lineage']['max_generation'] >= 1
+        comparisons = before['fixed_baseline_comparisons']
+        assert comparisons[0]['status'] == 'WAITING'
+        assert comparisons[1]['status'] == 'MATCHED_WINDOW'
+        assert comparisons[1]['g0_count'] == 320
+        assert comparisons[1]['descendant_count'] > 0
+        assert len(supervisor.baseline.accounts) == 320
     finally:
         supervisor.store.close()
     restarted = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
@@ -200,3 +206,71 @@ def test_three_research_epochs_survive_restart(tmp_path, monkeypatch):
         assert after['lineage'] == before['lineage']
     finally:
         restarted.store.close()
+
+
+def test_first_cycle_schedule_survives_restart(tmp_path, monkeypatch):
+    from darwin.supervisor import DarwinSupervisor
+    monkeypatch.setenv('DARWIN_LLM_ENABLED', 'false')
+    first = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    anchor = first.last_epoch
+    first.store.close()
+    second = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    try:
+        assert second.last_epoch == anchor
+        second.last_epoch -= second.epoch_seconds + 1
+        assert second.cycle_state()['status'] == 'WAITING_EVIDENCE'
+        assert second.run_epoch()['reason'] == 'NOT_ENOUGH_EVIDENCE'
+        assert not second.due()  # retry is throttled, not one event per tick
+    finally:
+        second.store.close()
+
+
+def test_shadow_baseline_checkpoint_and_partial_window(tmp_path, monkeypatch):
+    from darwin.supervisor import DarwinSupervisor
+    monkeypatch.setenv('DARWIN_LLM_ENABLED', 'false')
+    first = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    first.observe(state(1000, 100))
+    first.checkpoint()
+    snapshot = first.baseline.snapshot()
+    first.store.close()
+    second = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    try:
+        assert second.baseline.snapshot() == snapshot
+        second.baseline.epoch_start_ts = 1001
+        assert second.fixed_baseline_comparison(second.population.metrics())['status'] == 'WAITING'
+    finally:
+        second.store.close()
+
+
+def test_descendant_can_become_parent_without_changing_other_genes():
+    from darwin.strategist import StrategistAgent
+    from darwin.scientist import ExperimentPlan
+    from darwin.genome import upgrade_genome, gene_values
+    parent = upgrade_genome(dict(id='root',family='Momentum',horizon=1,threshold=.2,gain=2))
+    plan = ExperimentPlan('threshold', (.9, 1.1), 'test', 'synthetic test', .2)
+    child = StrategistAgent().variants(parent, plan)[0]
+    grandchild = StrategistAgent().variants(child, plan)[0]
+    assert grandchild['generation'] == 2
+    assert grandchild['parent_id'] == child['id']
+    assert [k for k,v in gene_values(child).items() if v != gene_values(grandchild)[k]] == ['threshold']
+
+
+def test_repeated_mutation_explores_new_bounded_gene(tmp_path, monkeypatch):
+    from darwin.supervisor import DarwinSupervisor
+    from darwin.scientist import ExperimentPlan
+    monkeypatch.setenv('DARWIN_LLM_ENABLED', 'false')
+    supervisor = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    try:
+        parent = supervisor.store.strategies()[0]
+        plan = ExperimentPlan('threshold', (.9, 1.1), 'probe', 'test', .2)
+        for child in supervisor.strategist.variants(parent, plan):
+            supervisor.store.insert_strategy(child)
+        fresh = supervisor.novel_plan(parent, plan)
+        known = {r['id'] for r in supervisor.store.strategies(include_killed=True)}
+        assert any(c['id'] not in known for c in supervisor.strategist.variants(parent, fresh))
+        supervisor.observe(state(1000,100))
+        saved = supervisor.store.pnl_history()
+        assert len(saved) == 1 and saved[0]['fixed_g0']['count'] == 320
+        assert saved[0]['active']['mean_fees_usd'] > 0
+    finally:
+        supervisor.store.close()

@@ -151,6 +151,28 @@ class DarwinStore:
                 self._db.execute("ALTER TABLE strategies ADD COLUMN genome_json TEXT NOT NULL DEFAULT '{}'")
             self._db.commit()
 
+    def record_pnl(self, payload: dict[str, Any]) -> None:
+        with self._lock:
+            self._db.execute("CREATE TABLE IF NOT EXISTS pnl_timeline (id INTEGER PRIMARY KEY, ts REAL NOT NULL, payload TEXT NOT NULL)")
+            self._db.execute("INSERT INTO pnl_timeline(ts,payload) VALUES (?,?)", (time.time(), json.dumps(payload)))
+            self._db.execute("DELETE FROM pnl_timeline WHERE id NOT IN (SELECT id FROM pnl_timeline ORDER BY id DESC LIMIT 1440)")
+            self._db.commit()
+
+    def pnl_history(self) -> list[dict[str, Any]]:
+        with self._lock:
+            exists = self._db.execute("SELECT 1 FROM sqlite_master WHERE name='pnl_timeline'").fetchone()
+            if not exists:
+                return []
+            return [{"recorded_at": r[0], **json.loads(r[1])} for r in self._db.execute("SELECT ts,payload FROM pnl_timeline ORDER BY id")]
+
+    def initial_epoch_time(self) -> float:
+        with self._lock:
+            self._db.execute("CREATE TABLE IF NOT EXISTS runtime_metadata (key TEXT PRIMARY KEY, value REAL NOT NULL)")
+            earliest = self._db.execute("SELECT MIN(ts) FROM factory_events WHERE type='factory_started'").fetchone()[0]
+            self._db.execute("INSERT OR IGNORE INTO runtime_metadata VALUES ('initial_epoch_time', ?)", (earliest if earliest is not None else time.time(),))
+            self._db.commit()
+            return float(self._db.execute("SELECT value FROM runtime_metadata WHERE key='initial_epoch_time'").fetchone()[0])
+
     def close(self) -> None:
         with self._lock:
             self._db.close()
@@ -617,6 +639,7 @@ class DarwinStore:
             },
             "gene_evolution": gene_evolution,
             "baseline_comparisons": comparisons,
+            "fixed_baseline_comparisons": [{"epoch_id": ep["id"], **json.loads(ep["config_json"])["fixed_baseline"]} for ep in epoch_rows if "fixed_baseline" in json.loads(ep["config_json"])],
         }
 
     def strategy_summaries(self, strategy_ids: list[str]) -> dict[str, dict[str, Any]]:

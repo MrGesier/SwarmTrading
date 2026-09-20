@@ -1,3 +1,5 @@
+See AUTONOMY_AND_LIVE.md for the recursive research, fixed G0 and PnL update. Local validation of this update uses the CI environment with DARWIN_LLM_ENABLED=false. Automatic code adoption and live execution remain unimplemented/disabled.
+
 # Local validation and remaining V1 work
 
 Validated on Windows with Python 3.12, Node 24.19.0 and npm 10.9.4.

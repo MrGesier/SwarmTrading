@@ -39,6 +39,11 @@ class DarwinSupervisor:
         checkpoint = self.store.load_checkpoint()
         if checkpoint:
             self.population.restore(checkpoint)
+        # The frozen G0 control is never selected, retired or mutated.
+        self.baseline = PaperPopulation(base, notional_usd=self.population.notional_usd,
+            fee_bps=self.population.fee_bps, fee_stress_multiplier=self.population.fee_stress_multiplier)
+        if checkpoint and checkpoint.get("fixed_g0"):
+            self.baseline.restore(checkpoint["fixed_g0"])
         self.cfg = JudgeConfig(
             min_sample_seconds=float(os.getenv("DARWIN_MIN_SAMPLE_SECONDS", "300")),
             min_closed_trades=int(os.getenv("DARWIN_MIN_CLOSED_TRADES", "5")),
@@ -52,7 +57,8 @@ class DarwinSupervisor:
         self.max_new_per_epoch = int(os.getenv("DARWIN_MAX_NEW_PER_EPOCH", "12"))
         self.auto_epoch_enabled = os.getenv("DARWIN_AUTO_EPOCH_ENABLED", "true").lower() in {"1", "true", "yes"}
         recent = self.store.recent_epochs(1)
-        self.last_epoch = float(recent[0]["ts"]) if recent else time.time()
+        self.last_epoch = float(recent[0]["ts"]) if recent else self.store.initial_epoch_time()
+        self._retry_epoch_at = 0.0
         self._last_state: dict[str, Any] | None = None
         self.scientist = ScientistAgent()  # deterministic fallback / validator
         self.strategist = StrategistAgent()  # deterministic mutation constructor
@@ -63,12 +69,17 @@ class DarwinSupervisor:
         self.last_experiment_plans: list[dict[str, Any]] = []
         self.last_agent_events: dict[str, dict[str, Any]] = {}
         self._last_factory_activity = 0.0
+        self._last_pnl_record = 0.0
         self._emit("factory_started", {"population": len(self.population.accounts)}, agent_id="atlas")
 
     def observe(self, state: dict[str, Any]) -> None:
         self._last_state = state
         self.population.observe(state)
+        self.baseline.observe(state)
         now = time.time()
+        if now - self._last_pnl_record >= 60:
+            self.store.record_pnl(self.pnl_state())
+            self._last_pnl_record = now
         if now - self._last_factory_activity >= 8.0:
             leaders = self.population.metrics(include_killed=False)[:3]
             self._emit("paper_activity", {"population": len(self.population.accounts), "leaders": [r.get("strategy_id") for r in leaders]}, agent_id="forge")
@@ -77,6 +88,7 @@ class DarwinSupervisor:
 
     def checkpoint(self) -> None:
         payload = self.population.snapshot()
+        payload["fixed_g0"] = self.baseline.snapshot()
         source = getattr(self, "source_snapshot", None)
         if source:
             payload["source"] = source()
@@ -85,8 +97,80 @@ class DarwinSupervisor:
     def _emit(self, event_type: str, payload: dict[str, Any] | None = None, *, agent_id: str | None = None, strategy_id: str | None = None) -> dict[str, Any]:
         return self.store.add_factory_event(event_type, payload or {}, agent_id=agent_id, strategy_id=strategy_id)
 
+    def pnl_state(self) -> dict[str, Any]:
+        def summarize(rows):
+            n = len(rows)
+            return {"count": n, "mean_net_usd": sum(r["pnl"] for r in rows)/n if n else None,
+                    "mean_fees_usd": sum(r["fees"] for r in rows)/n if n else None,
+                    "mean_net_bps": sum(r["return_bps"] for r in rows)/n if n else None,
+                    "trades": sum(r["closed_trades"] for r in rows)}
+        rows = self.population.metrics()
+        return {"window_start": self.population.epoch_start_ts,
+                "baseline_window_start": self.baseline.epoch_start_ts,
+                "control_window_matches": self.baseline.epoch_start_ts == self.population.epoch_start_ts,
+                "market_timestamp": self.population.last_ts,
+                "active": summarize(rows), "fixed_g0": summarize(self.baseline.metrics()),
+                "descendants": summarize([r for r in rows if r["generation"] > 0]),
+                "notional_per_strategy_usd": self.population.notional_usd,
+                "fee_bps_per_fill": self.population.fee_bps,
+                "funding_modeled": False,
+                "execution_model": "visible-book VWAP; spread and partial fills; no queue/latency/market-impact model",
+                "definition": "Mean independent strategy account, net of modeled fees. Not a funded portfolio. Resets at each epoch; active cohort may change."}
+
+    def novel_plan(self, parent, proposed):
+        """Bounded deterministic exploration if a proposal repeats existing children."""
+        known = {s["id"] for s in self.store.strategies(include_killed=True)}
+        def novel(plan):
+            return any(c["id"] not in known and c["mutation"]["from"] != c["mutation"]["to"]
+                       for c in self.strategist.variants(parent, plan))
+        if novel(proposed):
+            return proposed
+        for gene in MUTABLE_GENES:
+            candidate = ExperimentPlan(gene, (.85, 1.15),
+                f"Test whether a bounded change to {gene} improves net paper results in the next window.",
+                "Previous proposal repeats known variants; explore one different gene without changing numerical selection.", .2)
+            if novel(candidate):
+                return candidate
+        return proposed  # finite exploration space may be exhausted; never invent success
+
+    def cycle_state(self, rows=None) -> dict[str, Any]:
+        rows = self.population.metrics() if rows is None else rows
+        eligible = sum(r["sample_seconds"] >= self.cfg.min_sample_seconds and r["closed_trades"] >= self.cfg.min_closed_trades for r in rows)
+        remaining = max(0.0, self.last_epoch + self.epoch_seconds - time.time())
+        status = "DISABLED" if not self.auto_epoch_enabled else "COLLECTING" if remaining else "READY" if eligible else "WAITING_EVIDENCE"
+        recent = self.store.recent_epochs(1)
+        return {"status": status, "next_at": self.last_epoch + self.epoch_seconds,
+                "seconds_remaining": remaining, "eligible": eligible, "population": len(rows),
+                "min_sample_seconds": self.cfg.min_sample_seconds, "min_closed_trades": self.cfg.min_closed_trades,
+                "last_epoch": recent[0] if recent else None,
+                "max_generation": max((r["generation"] for r in rows), default=0)}
+
+    def fixed_baseline_comparison(self, rows) -> dict[str, Any]:
+        control = self.baseline.metrics()
+        descendants = [r for r in rows if r["generation"] > 0]
+        windows_match = (self.baseline.epoch_start_ts is not None
+                         and self.baseline.epoch_start_ts == self.population.epoch_start_ts
+                         and self.baseline.last_ts == self.population.last_ts)
+        durations = [r["sample_seconds"] for r in control + descendants]
+        matched = bool(windows_match and descendants and durations and max(durations) - min(durations) < 1)
+        def mean(group, key):
+            return sum(r[key] for r in group) / len(group) if group else None
+        return {"version": "fixed-g0-v1", "status": "MATCHED_WINDOW" if matched else "WAITING",
+                "g0_count": len(control), "descendant_count": len(descendants),
+                "g0_mean_return_bps": mean(control, "return_bps") if matched else None,
+                "descendant_mean_return_bps": mean(descendants, "return_bps") if matched else None,
+                "g0_mean_drawdown_bps": mean(control, "max_drawdown_bps") if matched else None,
+                "descendant_mean_drawdown_bps": mean(descendants, "max_drawdown_bps") if matched else None,
+                "g0_trades": sum(r["closed_trades"] for r in control),
+                "descendant_trades": sum(r["closed_trades"] for r in descendants),
+                "market_return_bps": self.population.benchmark_metrics()["market_return_bps"] if matched else None,
+                "sample_seconds": min(durations) if matched else None,
+                "fee_bps": self.population.fee_bps,
+                "uncertainty": "Not estimated. Correlated strategies and adaptive selection; future-window descriptive evidence, not independent proof.",
+                "reason": "Full frozen G0 versus every descendant evaluated before this epoch's selection." if matched else "Waiting for descendants and a complete common observation window; historical results are not reconstructed."}
+
     def due(self) -> bool:
-        return self.auto_epoch_enabled and time.time() - self.last_epoch >= self.epoch_seconds
+        return self.auto_epoch_enabled and time.time() >= self._retry_epoch_at and time.time() - self.last_epoch >= self.epoch_seconds
 
     def _remember_agent(self, agent_id: str, result: Any) -> None:
         try:
@@ -155,6 +239,7 @@ class DarwinSupervisor:
             and r["closed_trades"] >= self.cfg.min_closed_trades
         ]
         if not prelim_eligible:
+            self._retry_epoch_at = time.time() + 60
             self._emit("epoch_deferred", {"reason": "NOT_ENOUGH_EVIDENCE", "max_sample_seconds": max((r["sample_seconds"] for r in preliminary), default=0.0), "max_closed_trades": max((r["closed_trades"] for r in preliminary), default=0)}, agent_id="judge")
             return {
                 "ran": False,
@@ -168,11 +253,14 @@ class DarwinSupervisor:
 
         if self._last_state is not None:
             self.population.flatten(self._last_state)
+            self.baseline.flatten(self._last_state)
         rows = self.population.metrics(include_killed=False)
         benchmark = self.population.benchmark_metrics()
         market_return = float(benchmark.get("market_return_bps", 0.0))
         for row in rows:
             row["alpha_vs_market_bps"] = float(row.get("return_bps", 0.0)) - market_return
+
+        comparison = self.fixed_baseline_comparison(rows)
 
         # Numerical selection is deterministic and frozen before any LLM sees it.
         evaluations, champion_id = judge(rows, self.cfg)
@@ -244,6 +332,7 @@ class DarwinSupervisor:
                 continue
             plan = self._validated_plan(parent_row, recent_lessons)
             plan = self._evolve_plan(parent, plan)
+            plan = self.novel_plan(parent, plan)
             plan_row = {"parent_id": parent["id"], **plan.to_dict()}
             experiment_plans.append(plan_row)
             self._emit("hypothesis_created", plan_row, agent_id="curie", strategy_id=parent["id"])
@@ -253,6 +342,8 @@ class DarwinSupervisor:
             remaining_epoch_budget = max(0, self.max_new_per_epoch - created)
             child_budget = min(remaining_capacity, remaining_epoch_budget)
             for child in self.strategist.variants(parent, plan)[:child_budget]:
+                if child["mutation"]["from"] == child["mutation"]["to"]:
+                    continue
                 if self.store.insert_strategy(child):
                     self.population.add_strategy(child)
                     created += 1
@@ -286,6 +377,7 @@ class DarwinSupervisor:
             "max_new_per_epoch": self.max_new_per_epoch,
             "auto_epoch_enabled": self.auto_epoch_enabled,
             "benchmark": benchmark,
+            "fixed_baseline": comparison,
             "genome_version": 2,
             "mutable_genes": list(MUTABLE_GENES),
         }
@@ -321,7 +413,13 @@ class DarwinSupervisor:
             self._emit("lesson_saved", {"confidence": float(memory.data.get("confidence", 0.2) or 0.2), "lesson": memory.data}, agent_id="mnemosyne", strategy_id=champion_id)
 
         self._emit("epoch_completed", {"epoch_id": epoch_id, "champion_id": champion_id, "created": created, "killed": sum(r["decision"] == "KILL" for r in evaluations), "resolved_experiments": resolved_experiments}, agent_id="atlas", strategy_id=champion_id)
+        # Queue evidence-backed engineering work automatically, outside capital authority.
+        if created == 0 or not any(r.get("multiple_test_pass") for r in evaluations):
+            pending = self.store.recent_engineer_tasks(12)
+            if not any(t.get("status") == "PREPARED" for t in pending):
+                self.prepare_engineer_task("Investigate research stagnation: compare fees, mutation coverage and next-window evidence. Propose isolated, tested code changes; never modify execution permissions.")
         self.population.reset_epoch()
+        self.baseline.reset_epoch()
         self.checkpoint()
         self.last_epoch = time.time()
         return {
@@ -481,6 +579,7 @@ class DarwinSupervisor:
             "status_counts": statuses,
             "champion": champion,
             "leaderboard": rows[:25],
+            "cycle": self.cycle_state(rows),
             "epoch_seconds": self.epoch_seconds,
             "seconds_since_epoch": max(0.0, time.time() - self.last_epoch),
             "auto_epoch_enabled": self.auto_epoch_enabled,
