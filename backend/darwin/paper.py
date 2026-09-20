@@ -51,6 +51,7 @@ class PaperAccount:
     losses: int = 0
     started_at: float | None = None
     last_ts: float | None = None
+    unobserved_seconds: float = 0.0
     last_mid: float | None = None
     peak_equity: float = 0.0
     max_drawdown: float = 0.0
@@ -169,6 +170,10 @@ class PaperAccount:
         if self.started_at is None:
             self.started_at = ts
             self.peak_equity = 0.0
+        if self.last_ts is not None:
+            gap = max(0.0, ts - self.last_ts)
+            # Feed freshness is three seconds; longer gaps are not observation evidence.
+            self.unobserved_seconds += max(0.0, gap - 3.0)
         self.last_ts, self.last_mid = ts, mid
 
         raw_signal = raw_signal_for_genome(state["features"], self.strategy)
@@ -221,7 +226,7 @@ class PaperAccount:
         pnl = self.equity(mid)
         last = self.last_ts if self.last_ts is not None else 0.0
         started = self.started_at if self.started_at is not None else last
-        seconds = max(0.0, last - started)
+        seconds = max(0.0, last - started - self.unobserved_seconds)
         return_bps = pnl / max(self.notional_usd, 1e-12) * 1e4
         dd_bps = self.max_drawdown / max(self.notional_usd, 1e-12) * 1e4
         turnover_x = self.turnover / max(self.notional_usd, 1e-12)
@@ -290,6 +295,8 @@ class PaperAccount:
             "last_exit_reason": self.last_exit_reason,
             "avg_holding_seconds": (sum(self.holding_seconds) / len(self.holding_seconds)) if self.holding_seconds else 0.0,
             "sample_seconds": seconds,
+            "unobserved_seconds": self.unobserved_seconds,
+            "observation_policy": "gap-cap3-v1",
             "position": self.position,
             "signal": self.last_signal,
         }
@@ -327,6 +334,9 @@ class PaperPopulation:
             if sid not in self.accounts:
                 continue
             account = self.accounts[sid]
+            for key in ("notional_usd", "fee_bps", "fee_stress_multiplier"):
+                if float(values[key]) != float(getattr(account, key)):
+                    raise ValueError("Paper checkpoint accounting configuration changed; restore original settings or choose a new DARWIN_DATA_DIR")
             for key, value in values.items():
                 if key == "strategy":
                     continue  # SQLite strategy status/genes remain authoritative.

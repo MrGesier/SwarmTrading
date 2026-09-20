@@ -151,6 +151,10 @@ class DarwinStore:
                 self._db.execute("ALTER TABLE strategies ADD COLUMN genome_json TEXT NOT NULL DEFAULT '{}'")
             self._db.commit()
 
+    def close(self) -> None:
+        with self._lock:
+            self._db.close()
+
     def reserve_llm_budget(self, amount: float, daily_limit: float) -> bool:
         if not math.isfinite(amount) or amount < 0 or not math.isfinite(daily_limit) or daily_limit <= 0:
             return False
@@ -256,37 +260,43 @@ class DarwinStore:
         eligible = sum(1 for r in evaluations if r.get("eligible"))
         active = sum(1 for r in evaluations if r["decision"] != "KILL")
         with self._lock:
-            cur = self._db.execute(
-                "INSERT INTO epochs(ts,symbol,mode,champion_id,eligible,active,killed,created,config_json) VALUES (?,?,?,?,?,?,?,?,?)",
-                (time.time(), symbol, mode, champion_id, eligible, active, killed, created, json.dumps(config, separators=(",", ":"))),
-            )
-            epoch_id = int(cur.lastrowid)
-            self._db.executemany(
-                """INSERT INTO evaluations
-                (epoch_id,strategy_id,pnl,return_bps,max_drawdown_bps,turnover_x,fees,orders,closed_trades,win_rate,sample_seconds,fitness,decision)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                [
-                    (
-                        epoch_id, r["strategy_id"], r["pnl"], r["return_bps"], r["max_drawdown_bps"], r["turnover_x"], r["fees"],
-                        r["orders"], r["closed_trades"], r["win_rate"], r["sample_seconds"], r["fitness"], r["decision"],
-                    )
-                    for r in evaluations
-                ],
-            )
-            detail_keys = {
-                "raw_fitness", "evidence_weight", "selection_z", "multiple_test_threshold_z", "multiple_test_pass",
-                "expectancy_usd", "mean_trade_bps", "trade_std_bps", "trade_z", "profit_factor", "payoff_ratio",
-                "gross_profit", "gross_loss", "regime_stats", "fee_stress_multiplier", "fee_stress_return_bps", "alpha_vs_market_bps", "eligible",
-                "genome_version", "genes", "exit_reasons", "last_exit_reason", "avg_holding_seconds",
-            }
-            self._db.executemany(
-                "INSERT OR REPLACE INTO evaluation_details(epoch_id,strategy_id,details_json) VALUES (?,?,?)",
-                [
-                    (epoch_id, r["strategy_id"], json.dumps({k: r.get(k) for k in detail_keys if k in r}, separators=(",", ":"), default=str))
-                    for r in evaluations
-                ],
-            )
-            self._db.commit()
+            self._db.execute("SAVEPOINT epoch_write")
+            try:
+                cur = self._db.execute(
+                    "INSERT INTO epochs(ts,symbol,mode,champion_id,eligible,active,killed,created,config_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (time.time(), symbol, mode, champion_id, eligible, active, killed, created, json.dumps(config, separators=(",", ":"))),
+                )
+                epoch_id = int(cur.lastrowid)
+                self._db.executemany(
+                    """INSERT INTO evaluations
+                    (epoch_id,strategy_id,pnl,return_bps,max_drawdown_bps,turnover_x,fees,orders,closed_trades,win_rate,sample_seconds,fitness,decision)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    [
+                        (
+                            epoch_id, r["strategy_id"], r["pnl"], r["return_bps"], r["max_drawdown_bps"], r["turnover_x"], r["fees"],
+                            r["orders"], r["closed_trades"], r["win_rate"], r["sample_seconds"], r["fitness"], r["decision"],
+                        )
+                        for r in evaluations
+                    ],
+                )
+                detail_keys = {
+                    "raw_fitness", "evidence_weight", "selection_z", "multiple_test_threshold_z", "multiple_test_pass",
+                    "expectancy_usd", "mean_trade_bps", "trade_std_bps", "trade_z", "profit_factor", "payoff_ratio",
+                    "gross_profit", "gross_loss", "regime_stats", "fee_stress_multiplier", "fee_stress_return_bps", "alpha_vs_market_bps", "eligible",
+                    "genome_version", "genes", "exit_reasons", "last_exit_reason", "avg_holding_seconds", "unobserved_seconds", "observation_policy",
+                }
+                self._db.executemany(
+                    "INSERT OR REPLACE INTO evaluation_details(epoch_id,strategy_id,details_json) VALUES (?,?,?)",
+                    [
+                        (epoch_id, r["strategy_id"], json.dumps({k: r.get(k) for k in detail_keys if k in r}, separators=(",", ":"), default=str))
+                        for r in evaluations
+                    ],
+                )
+                self._db.execute("RELEASE SAVEPOINT epoch_write")
+            except BaseException:
+                self._db.execute("ROLLBACK TO SAVEPOINT epoch_write")
+                self._db.execute("RELEASE SAVEPOINT epoch_write")
+                raise
         return epoch_id
 
     def add_lesson(self, kind: str, payload: dict[str, Any], *, strategy_id: str | None = None, confidence: float = 0.5) -> None:

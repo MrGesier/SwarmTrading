@@ -129,3 +129,74 @@ def test_confirmation_is_reset_by_stale_tick():
     assert account.position == 0
     account.observe(state(3,100))
     assert account.position == 1
+
+
+def test_restart_gap_is_not_counted_as_observed_evidence():
+    from darwin.paper import PaperAccount
+    account = PaperAccount(dict(id='gap', family='Momentum', horizon=1, threshold=.03, gain=2))
+    account.observe(state(0,100))
+    account.observe(state(3600,100))
+    assert account.metrics()['sample_seconds'] == 3
+    assert account.unobserved_seconds == 3597
+
+
+def test_restore_rejects_changed_fee_policy():
+    genome = dict(id='fee', family='Momentum', horizon=1, threshold=.03, gain=2)
+    original = PaperPopulation([genome], fee_bps=3.5)
+    changed = PaperPopulation([genome], fee_bps=7)
+    with pytest.raises(ValueError, match='accounting configuration'):
+        changed.restore(original.snapshot())
+
+
+def test_failed_epoch_write_cannot_leak_into_next_commit(tmp_path):
+    store = DarwinStore(tmp_path / 'atomic.sqlite')
+    account = PaperPopulation([dict(id='g0', family='Momentum', horizon=1, threshold=.01, gain=2)])
+    account.observe(state(1000, 100))
+    row = {**account.metrics()[0], 'decision': 'KEEP', 'fitness': 0, 'eligible': False}
+    # Duplicate primary key fails after the epoch and first evaluation were inserted.
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        store.write_epoch('BTCUSDT', 'simulation', None, [row, row], created=0, config={})
+    store.add_factory_event('after_failed_epoch')
+    assert store.recent_epochs(10) == []
+    assert store._db.execute('SELECT COUNT(*) FROM evaluations').fetchone()[0] == 0
+    epoch_id = store.write_epoch('BTCUSDT', 'simulation', None, [row], created=0, config={})
+    store.close()
+    reopened = DarwinStore(store.path)
+    assert reopened.recent_epochs(10)[0]['id'] == epoch_id
+    assert reopened._db.execute('SELECT COUNT(*) FROM evaluations').fetchone()[0] == 1
+    reopened.close()
+
+
+def test_three_research_epochs_survive_restart(tmp_path, monkeypatch):
+    from darwin.supervisor import DarwinSupervisor
+    monkeypatch.setenv('DARWIN_LLM_ENABLED', 'false')
+    monkeypatch.setenv('HYPERLIQUID_ENABLED', 'false')
+    supervisor = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    try:
+        price = 100.0
+        for epoch in range(3):
+            for tick in range(620):
+                direction = 1 if (tick // 20) % 2 == 0 else -1
+                price += direction * .05
+                frame = state(epoch * 620 + tick, price)
+                frame['features']['returns'] = {k: direction * 5 for k in frame['features']['returns']}
+                frame['bids'] = [[price - .005, 10000]]
+                frame['asks'] = [[price + .005, 10000]]
+                supervisor.observe(frame)
+            result = supervisor.run_epoch(force=True)
+            assert result['ran'] and result['epoch_id'] == epoch + 1
+            if epoch == 0:
+                assert result['created'] > 0
+        before = supervisor.evolution_state(20)
+        assert before['epochs_observed'] == 3
+        assert before['lineage']['max_generation'] >= 1
+    finally:
+        supervisor.store.close()
+    restarted = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    try:
+        after = restarted.evolution_state(20)
+        assert after['epochs_observed'] == before['epochs_observed']
+        assert after['lineage'] == before['lineage']
+    finally:
+        restarted.store.close()
