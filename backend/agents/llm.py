@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 import httpx
+from jsonschema import validate
 
 
 BRAIN_DEFAULTS: dict[str, dict[str, str]] = {
@@ -106,6 +107,8 @@ class AgentBrain:
         self.openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         self.gateway_api_key = (os.getenv("AI_GATEWAY_API_KEY") or os.getenv("VERCEL_OIDC_TOKEN") or "").strip()
         self.gateway_base_url = os.getenv("DARWIN_LLM_BASE_URL", "https://ai-gateway.vercel.sh/v1").rstrip("/")
+        self.max_output_tokens = max(128, min(8192, int(os.getenv("DARWIN_LLM_MAX_OUTPUT_TOKENS", "4096"))))
+        self.reserve_budget = None
         self.last_result: LLMResult | None = None
 
     @property
@@ -197,6 +200,7 @@ class AgentBrain:
             "instructions": self.system_prompt,
             "input": task + "\n\nCONTEXT_JSON:\n" + self._context_text(context),
             "store": False,
+            "max_output_tokens": self.max_output_tokens,
             "text": {
                 "format": {
                     "type": "json_schema",
@@ -224,6 +228,7 @@ class AgentBrain:
         model = self.model if "/" in self.model else f"openai/{self.model}"
         payload = {
             "model": model,
+            "max_completion_tokens": self.max_output_tokens,
             "messages": [
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": task + "\n\nCONTEXT_JSON:\n" + self._context_text(context)},
@@ -266,12 +271,22 @@ class AgentBrain:
                 error=f"{self.runtime} brain unavailable: configure {key_name} or switch this agent to deterministic",
             )
         try:
+            if self.reserve_budget is not None:
+                price = MODEL_PRICES_PER_MTOK.get(_canonical_model(self.model))
+                if price is None:
+                    raise ValueError("Model pricing is unknown; budget reservation unavailable")
+                # Conservative byte bound, including schema/instructions and token framing.
+                input_bound = len((self.system_prompt + task + self._context_text(context) + json.dumps(schema)).encode("utf-8")) + 2048
+                reservation = (input_bound * price[0] + self.max_output_tokens * price[1]) / 1_000_000
+                if not self.reserve_budget(reservation):
+                    return self._result(ok=False, data=fallback, started=started, error="Persistent research budget exhausted; deterministic fallback")
             if self.runtime == "gateway":
                 data, prompt_tokens, completion_tokens = self._gateway_json(task=task, context=context, schema_name=schema_name, schema=schema)
             elif self.runtime == "openai":
                 data, prompt_tokens, completion_tokens = self._openai_json(task=task, context=context, schema_name=schema_name, schema=schema)
             else:
                 raise ValueError(f"unsupported brain runtime {self.runtime!r}")
+            validate(instance=data, schema=schema)
             return self._result(
                 ok=True,
                 data=data,
@@ -284,5 +299,5 @@ class AgentBrain:
                 ok=False,
                 data=fallback,
                 started=started,
-                error=f"{type(exc).__name__}: {str(exc)[:400]}",
+                error=f"{type(exc).__name__}: provider request or validation failed; deterministic fallback",
             )

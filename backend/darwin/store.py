@@ -27,6 +27,7 @@ class DarwinStore:
             self._db.executescript(
                 """
                 PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS llm_budget (ts REAL NOT NULL, reserved_usd REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS paper_checkpoint (id INTEGER PRIMARY KEY CHECK(id=1), epoch_id INTEGER NOT NULL, payload TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS strategies (
                     id TEXT PRIMARY KEY,
@@ -149,6 +150,24 @@ class DarwinStore:
             if "genome_json" not in strategy_columns:
                 self._db.execute("ALTER TABLE strategies ADD COLUMN genome_json TEXT NOT NULL DEFAULT '{}'")
             self._db.commit()
+
+    def reserve_llm_budget(self, amount: float, daily_limit: float) -> bool:
+        if not math.isfinite(amount) or amount < 0 or not math.isfinite(daily_limit) or daily_limit <= 0:
+            return False
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                self._db.execute("DELETE FROM llm_budget WHERE ts<?", (time.time()-86400,))
+                spent = self._db.execute("SELECT COALESCE(SUM(reserved_usd),0) FROM llm_budget").fetchone()[0]
+                if spent + amount > daily_limit:
+                    self._db.rollback()
+                    return False
+                self._db.execute("INSERT INTO llm_budget VALUES(?,?)", (time.time(), amount))
+                self._db.commit()
+                return True
+            except Exception:
+                self._db.rollback()
+                raise
 
     def save_checkpoint(self, payload: dict[str, Any]) -> None:
         encoded = json.dumps(payload, separators=(",", ":"), allow_nan=False)

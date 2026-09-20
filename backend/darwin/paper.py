@@ -317,7 +317,7 @@ class PaperPopulation:
             if isinstance(value, dict):
                 return {k: plain(v) for k, v in value.items()}
             return value
-        return {"version": 1, "accounts": {sid: plain(vars(a)) for sid, a in self.accounts.items()},
+        return {"version": 1, "accounts": {sid: plain({k:v for k,v in vars(a).items() if k != "equity_curve"}) for sid, a in self.accounts.items()},
                 "benchmark": {k: getattr(self, k) for k in ("epoch_start_mid", "last_mid", "epoch_start_ts", "last_ts")}}
 
     def restore(self, snapshot: dict[str, Any]) -> None:

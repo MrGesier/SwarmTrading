@@ -13,7 +13,7 @@ async def run():
     SIGNAL.parent.mkdir(parents=True, exist_ok=True)
     SIGNAL.unlink(missing_ok=True)
     (ROOT / "data" / "runtime-pid.txt").write_text(str(os.getpid()))
-    server = uvicorn.Server(uvicorn.Config('main:app', host='127.0.0.1', port=8000))
+    server = uvicorn.Server(uvicorn.Config('main:app', host='127.0.0.1', port=8000, timeout_graceful_shutdown=10))
 
     async def watch():
         while not server.should_exit:

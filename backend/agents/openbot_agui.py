@@ -8,6 +8,7 @@ when backend/requirements-openbot.txt is installed.
 from __future__ import annotations
 
 import os
+import hmac
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,7 +71,7 @@ def expected_token() -> str:
 def authorised(headers: Any) -> bool:
     expected = expected_token()
     offered = (headers.get(TOKEN_HEADER) or "").strip()
-    return bool(expected and offered == expected)
+    return bool(expected and hmac.compare_digest(offered, expected))
 
 
 def get_agent(agent_id: str):

@@ -57,6 +57,8 @@ class DarwinSupervisor:
         self.scientist = ScientistAgent()  # deterministic fallback / validator
         self.strategist = StrategistAgent()  # deterministic mutation constructor
         self.brains = DarwinBrains()
+        for brain in self.brains._by_id.values():
+            brain.reserve_budget = lambda amount: self.store.reserve_llm_budget(amount, float(os.getenv("DARWIN_LLM_DAILY_BUDGET_USD", "1")))
         self.engineer = CodexEngineer()
         self.last_experiment_plans: list[dict[str, Any]] = []
         self.last_agent_events: dict[str, dict[str, Any]] = {}
@@ -74,7 +76,11 @@ class DarwinSupervisor:
             self.checkpoint()
 
     def checkpoint(self) -> None:
-        self.store.save_checkpoint(self.population.snapshot())
+        payload = self.population.snapshot()
+        source = getattr(self, "source_snapshot", None)
+        if source:
+            payload["source"] = source()
+        self.store.save_checkpoint(payload)
 
     def _emit(self, event_type: str, payload: dict[str, Any] | None = None, *, agent_id: str | None = None, strategy_id: str | None = None) -> dict[str, Any]:
         return self.store.add_factory_event(event_type, payload or {}, agent_id=agent_id, strategy_id=strategy_id)

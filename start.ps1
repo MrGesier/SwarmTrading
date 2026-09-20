@@ -61,7 +61,7 @@ if (-not (Test-Path -LiteralPath $pythonExe)) {
 # Install/repair runtime dependencies. This is intentionally lightweight: pyarrow is optional.
 $runtimeReq = Join-Path $projectRoot 'backend\requirements-runtime.txt'
 Log 'Checking Python runtime dependencies...'
-$check = & $pythonExe -c "import fastapi,uvicorn,httpx,websockets,numpy,dotenv,hyperliquid; print('ok')" 2>$null
+$check = & $pythonExe -c "import fastapi,uvicorn,httpx,websockets,numpy,dotenv,hyperliquid,jsonschema; print('ok')" 2>$null
 if ($Repair -or $LASTEXITCODE -ne 0 -or ([string]$check).Trim() -ne 'ok') {
     Log 'Installing/repairing Python dependencies...'
     & $pythonExe -m pip install --disable-pip-version-check --upgrade pip
@@ -74,7 +74,9 @@ Log 'Python backend dependencies: OK'
 # ---- Frontend one-time build ------------------------------------------------
 $frontendRoot = Join-Path $projectRoot 'frontend'
 $distIndex = Join-Path $frontendRoot 'dist\index.html'
-if ($Repair -or -not (Test-Path -LiteralPath $distIndex)) {
+$sourceFiles = @(Get-ChildItem -LiteralPath (Join-Path $frontendRoot 'src') -Recurse -File) + @(Get-ChildItem -LiteralPath $frontendRoot -File)
+$sourceChanged = (Test-Path -LiteralPath $distIndex) -and @($sourceFiles | Where-Object { $_.LastWriteTimeUtc -gt (Get-Item -LiteralPath $distIndex).LastWriteTimeUtc }).Count -gt 0
+if ($Repair -or $sourceChanged -or -not (Test-Path -LiteralPath $distIndex)) {
     if (-not (Cmd-Exists 'node.exe')) { Fail 'Node.js was not found. Install Node.js 22 LTS, then rerun Start SwarmTrade.cmd.' }
     if (-not (Cmd-Exists 'npm.cmd')) { Fail 'npm was not found. Reinstall Node.js 22 LTS with npm.' }
     $nodeVersionRaw = (& node.exe --version).TrimStart('v')

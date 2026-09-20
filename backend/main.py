@@ -93,6 +93,16 @@ class Session:
         self.last_quote = None
         self.darwin = DarwinSupervisor(symbol, mode, DATA)
         self.darwin_error = ""
+        checkpoint = self.darwin.store.load_checkpoint()
+        source = (checkpoint or {}).get('source')
+        self.resumed = bool(source and mode == 'simulation')
+        if self.resumed:
+            def tuples(value):
+                return tuple(tuples(x) for x in value) if isinstance(value, list) else value
+            self.rng.setstate(tuples(source['rng']))
+            self.price, self.n = source['price'], source['n']
+        self.darwin.source_snapshot = lambda: dict(rng=self.rng.getstate(), price=self.price, n=self.n)
+
         self.market_source = os.getenv("DARWIN_MARKET_SOURCE", "hyperliquid" if mode == "live" else "simulation").lower()
         self.venue_context: dict[str, object] = {}
 
@@ -158,7 +168,7 @@ class Session:
         try:
             if self.mode == 'simulation':
                 now = time.time()
-                for i in range(400):
+                for i in range(0 if self.resumed else 400):
                     self.simulate(now - (400-i)*.5)
                 while True:
                     self.simulate(time.time())

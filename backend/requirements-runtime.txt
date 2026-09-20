@@ -5,3 +5,4 @@ websockets>=14,<17
 numpy>=2,<3
 python-dotenv>=1,<2
 hyperliquid-python-sdk==0.24.0
+jsonschema>=4.23,<5
