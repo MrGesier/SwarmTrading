@@ -2092,3 +2092,13 @@ footer i {
     transition: none !important;
   }
 }
+
+.factory-page, .factory-shell, .factory-floor, .factory-playback { min-width: 0; max-width: 100%; }
+@media (max-width: 1500px) {
+  .factory-shell { grid-template-columns: minmax(0, 1fr); }
+  .factory-side.left, .factory-side.right { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .factory-panel-title { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .factory-side.left, .factory-side.right { display: block; }
+}

@@ -112,7 +112,7 @@ function Metric({
 function App() {
   const [route, setRoute] = useState(location.pathname),
     [symbol, setSymbol] = useState("BTCUSDT"),
-    [mode, setMode] = useState("live"),
+    [mode, setMode] = useState("simulation"),
     [horizon, setHorizon] = useState(5);
   const [live, setLive] = useState<State | null>(null),
     [connection, setConnection] = useState("Connecting to local engine…"),

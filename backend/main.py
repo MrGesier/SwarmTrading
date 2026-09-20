@@ -285,7 +285,7 @@ def get_session(symbol='BTCUSDT', mode='simulation'):
 @asynccontextmanager
 async def lifespan(app):
     autostart_symbol = os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT')
-    autostart_mode = os.getenv('DARWIN_AUTOSTART_MODE', 'live')
+    autostart_mode = os.getenv('DARWIN_AUTOSTART_MODE', 'simulation')
     get_session(autostart_symbol, autostart_mode)
     yield
     for s in sessions.values():
@@ -586,7 +586,7 @@ def runtime_state():
         'version': '0.11.0',
         'data_dir': str(DATA),
         'autostart_symbol': os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT'),
-        'autostart_mode': os.getenv('DARWIN_AUTOSTART_MODE', 'live'),
+        'autostart_mode': os.getenv('DARWIN_AUTOSTART_MODE', 'simulation'),
         'market_source': os.getenv('DARWIN_MARKET_SOURCE', 'hyperliquid'),
         'paper_only': not hyperliquid_executor.status().get('ready', False),
     }

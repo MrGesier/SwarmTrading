@@ -15,6 +15,15 @@ function Fail([string]$Message) {
     Log "ERROR: $Message"
     throw $Message
 }
+function Run-Logged([string]$Program, [string[]]$Arguments) {
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Program @Arguments 2>&1 | Tee-Object -FilePath $launcherLog -Append
+        $commandExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($commandExit -ne 0) { Fail "Command failed with exit code $commandExit. See data\launcher.log." }
+}
 function Cmd-Exists([string]$Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
@@ -58,15 +67,21 @@ if (-not (Test-Path -LiteralPath $pythonExe)) {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pythonExe)) { Fail 'Could not create .venv.' }
 }
 
+& $pythonExe -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)"
+if ($LASTEXITCODE -ne 0) { Fail 'The project virtual environment requires Python 3.11+. Recreate .venv using Python 3.12.' }
+
 # Install/repair runtime dependencies. This is intentionally lightweight: pyarrow is optional.
 $runtimeReq = Join-Path $projectRoot 'backend\requirements-runtime.txt'
 Log 'Checking Python runtime dependencies...'
+$ErrorActionPreference = 'Continue'
 $check = & $pythonExe -c "import fastapi,uvicorn,httpx,websockets,numpy,dotenv,hyperliquid,jsonschema; print('ok')" 2>$null
-if ($Repair -or $LASTEXITCODE -ne 0 -or ([string]$check).Trim() -ne 'ok') {
+$dependencyExit = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+if ($Repair -or $dependencyExit -ne 0 -or ([string]$check).Trim() -ne 'ok') {
     Log 'Installing/repairing Python dependencies...'
-    & $pythonExe -m pip install --disable-pip-version-check --upgrade pip
+    Run-Logged -Program $pythonExe -Arguments @('-m','pip','install','--disable-pip-version-check','--upgrade','pip')
     if ($LASTEXITCODE -ne 0) { Fail 'pip upgrade failed.' }
-    & $pythonExe -m pip install --disable-pip-version-check -r $runtimeReq 2>&1 | Tee-Object -FilePath $launcherLog -Append
+    Run-Logged -Program $pythonExe -Arguments @('-m','pip','install','--disable-pip-version-check','-r',$runtimeReq)
     if ($LASTEXITCODE -ne 0) { Fail 'Backend dependency installation failed. Check internet access and launcher.log.' }
 }
 Log 'Python backend dependencies: OK'
@@ -85,10 +100,10 @@ if ($Repair -or $sourceChanged -or -not (Test-Path -LiteralPath $distIndex)) {
     Push-Location $frontendRoot
     try {
         Log 'Installing frontend dependencies (first launch only)...'
-        & npm.cmd ci --no-audit --no-fund --prefer-offline 2>&1 | Tee-Object -FilePath $launcherLog -Append
+        Run-Logged -Program 'npm.cmd' -Arguments @('ci','--no-audit','--no-fund','--prefer-offline')
         if ($LASTEXITCODE -ne 0) { Fail 'npm ci failed. See launcher.log.' }
         Log 'Building frontend (first launch only)...'
-        & npm.cmd run build 2>&1 | Tee-Object -FilePath $launcherLog -Append
+        Run-Logged -Program 'npm.cmd' -Arguments @('run','build')
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $distIndex)) { Fail 'Frontend build failed. See launcher.log.' }
     } finally { Pop-Location }
 }
