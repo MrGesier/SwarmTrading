@@ -6,21 +6,50 @@ A local market-intent and strategy-evolution terminal with a Pyrenean mountain /
 
 ## Start
 
-On Windows, extract the ZIP first, then double-click **Start SwarmTrade.cmd**. Requires Python 3.11+ and Node.js 22 LTS for the first frontend build. The launcher auto-detects Python, installs/repairs the lightweight backend runtime, builds the frontend once, then runs a **single FastAPI process** and opens **http://127.0.0.1:8000**. API docs are at **http://127.0.0.1:8000/docs**. If launch fails, the command window stays open and `data/launcher.log` / `data/backend-error.log` contain the reason. Use **Check SwarmTrade.cmd** for diagnostics or **Repair SwarmTrade.cmd** for a clean dependency rebuild without deleting Darwin data.
+From a local checkout, double-click **Start SwarmTrade.cmd**. Requires Python 3.11+ (3.12 recommended) and Node.js 22+ with npm for the frontend build. The launcher installs runtime dependencies, rebuilds missing/stale frontend assets and opens **http://127.0.0.1:8000/factory**. A single process serves the API, UI and WebSockets. Simulation is the offline default; the launcher sets `HYPERLIQUID_ENABLED=false`.
 
-Alternatively, run these in separate terminals from this project:
+Use **Stop SwarmTrade.cmd** for a graceful stop. **Check SwarmTrade.cmd** provides diagnostics; **Repair SwarmTrade.cmd** reinstalls dependencies/rebuilds without deleting research databases. Logs: `data/launcher.log`, `data/backend.log`, `data/backend-error.log`.
 
-```powershell
-cd backend
-..\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
-```
+PowerShell equivalents from the repository:
 
 ```powershell
-cd frontend
-npm run dev
+.\start.ps1
+.\stop.ps1
+.\start.ps1 -Repair
 ```
 
-For manual setup: `python -m venv .venv`, then `.venv\Scripts\python.exe -m pip install -r backend/requirements.lock.txt`, and `npm ci` in `frontend/`.
+## Configuration
+
+No `.env` is required for deterministic paper research. `.env.example` is the versioned template; `.env` is private and ignored by Git. To configure providers, copy the template **only if `.env` does not already exist**, then edit it locally. Never overwrite an existing file containing credentials.
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Restart Darwin after changing environment settings. Existing process environment variables take precedence over `.env`.
+
+- `DARWIN_AUTOSTART_MODE=simulation`: offline synthetic data. `live` means public market data, not permission to execute orders.
+- `DARWIN_AUTO_EPOCH_ENABLED=true`, `DARWIN_EPOCH_SECONDS=86400`: automatic daily selection, subject to evidence gates; the initial schedule survives restart.
+- `DARWIN_PAPER_FEE_BPS=3.5`: modeled fee per fill, not a verified Hyperliquid account tier. Changing accounting settings with an existing checkpoint is rejected; keep original settings or use a separate data directory.
+- `DARWIN_LLM_ENABLED=true`: allows configured research providers; without a key the deterministic fallback remains usable. Set `false` to disable provider calls explicitly.
+- `DARWIN_LLM_MAX_OUTPUT_TOKENS=4096`, `DARWIN_LLM_DAILY_BUDGET_USD=1`: bounded output and estimated 24-hour reservations **per symbol/mode database**, excluding OpenBot. Not a global billing cap.
+- `HYPERLIQUID_ENABLED=false`: keep execution disabled. The Windows launcher enforces this value.
+
+## Read PnL and recursive progress
+
+In **Factory**, the **PnL paper net de frais** panel shows mean independent-account net PnL in USD/bp, deducted fees, fixed G0 and descendants. These are not portfolio returns. The minute-sampled curves restart at each epoch; recorded epoch comparisons remain below. An explicit warning identifies mismatched G0/control windows.
+
+The **Research cycle** panel shows the countdown, minimum observation/trade requirements, last completed cycle and generation. Research automatically measures, selects, mutates one bounded gene, evaluates descendants on the next window and repeats. Repeated proposals trigger bounded exploration; stagnation queues an engineering task. Automatic execution/adoption of code changes is **not implemented**.
+
+**Evolution Observatory** contains the frozen G0/descendant comparisons. A comparison remains WAITING until a full common window exists. Fees, visible-book VWAP and partial fills are modeled; funding, queue/latency effects and endogenous market impact are not. No live readiness or durable profitability is claimed. See [AUTONOMY_AND_LIVE.md](AUTONOMY_AND_LIVE.md).
+
+Run three accelerated synthetic cycles in isolated temporary databases:
+
+```powershell
+.\.venv\Scripts\python.exe backend\replay_research.py --output replay-report.json --epochs 3
+```
+
+This verifies research mechanics, not trading performance. See [V1_VALIDATION.md](V1_VALIDATION.md) for validation history and limitations.
 
 ## Use
 
