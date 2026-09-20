@@ -36,7 +36,7 @@ The latest three epochs are compared with the earliest three available epochs:
 - `IMPROVING` when Research Quality is +4 points or more;
 - `REGRESSING` when it is -4 points or worse;
 - `FLAT` between those thresholds;
-- `EARLY` before enough epochs exist;
+- `WAITING` before six epochs exist; early/latest windows must not overlap;
 - `WAITING` before the first completed epoch.
 
 Confidence is `LOW` under 5 epochs, `MEDIUM` from 5–11, and `HIGH` from 12 epochs onward.

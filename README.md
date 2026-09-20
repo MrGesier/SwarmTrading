@@ -1,3 +1,5 @@
+> Local V1 hardening: see [V1_VALIDATION.md](V1_VALIDATION.md) for Windows launch, executed checks, provider status and remaining work. Current target branch: `darwin-v0.11-factory-evolution`; do not merge PR #1.
+
 # Swarm Trade by Mister Gésier — V0.11 Evolution Observatory + Factory Crew
 
 A local market-intent and strategy-evolution terminal with a Pyrenean mountain / market-line identity. Python/FastAPI computes the shared state and Darwin paper experiments; React/TypeScript displays them. Authenticated execution is isolated behind a disabled-by-default Hyperliquid adapter.

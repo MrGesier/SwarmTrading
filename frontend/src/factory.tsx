@@ -29,8 +29,8 @@ const eventToken: Record<string,string> = {
   hypothesis_created:"📜", mutation_created:"🧬", judge_decision:"🔖", strategy_killed:"💀", champion_promoted:"👑",
   lesson_saved:"📚", epoch_started:"⏱️", epoch_completed:"🏁", paper_activity:"⚙️", risk_gate_blocked:"🛡️", agent_finished:"✨", factory_started:"🏭", epoch_deferred:"⏳", experiment_resolved:"🏆", engineer_task_prepared:"🧑‍💻",
 };
-const fmt=(n:any,d=1)=>Number.isFinite(Number(n))?Number(n).toFixed(d):"—";
-const signed=(n:any,d=1)=>Number.isFinite(Number(n))?`${Number(n)>=0?"+":""}${Number(n).toFixed(d)}`:"—";
+const fmt=(n:any,d=1)=>n!=null&&n!==""&&Number.isFinite(Number(n))?Number(n).toFixed(d):"—";
+const signed=(n:any,d=1)=>n!=null&&n!==""&&Number.isFinite(Number(n))?`${Number(n)>=0?"+":""}${Number(n).toFixed(d)}`:"—";
 const time=(ts:number)=>new Date(ts*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
 
 function Character({agent, selected, active, dimmed, onClick}:{agent:Agent;selected:boolean;active:boolean;dimmed:boolean;onClick:()=>void}){
@@ -133,6 +133,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Watch the factory learn.</h2><p>Different characters, real events, persistent generations — and an observable paper-research improvement trail.</p></div>
       <div className="factory-live"><span className="pulse-dot"/><b>{connected?state.market.health:"DISCONNECTED · RECONNECTING"}</b><small>{state.market.regime} · {state.symbol}</small></div>
     </header>
+    <p role="status">{state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Research provider configured · connection succeeds only after an actual run":"Research provider unavailable · deterministic fallback · no LLM run active"}</p>
     <div className="factory-strip">
       <div><small>POPULATION</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER??0} challengers</span></div>
       <div><small>CHAMPION</small><b className="gold">{state.champion?.id??"No crown yet"}</b><span>{state.champion?.metrics?`${signed(state.champion.metrics.return_bps)} bp`:"collecting evidence"}</span></div>
