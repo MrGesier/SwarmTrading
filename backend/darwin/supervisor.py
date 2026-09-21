@@ -87,6 +87,7 @@ class DarwinSupervisor:
             self.checkpoint()
 
     def checkpoint(self) -> None:
+        self.persist_trades()
         payload = self.population.snapshot()
         payload["fixed_g0"] = self.baseline.snapshot()
         source = getattr(self, "source_snapshot", None)
@@ -96,6 +97,13 @@ class DarwinSupervisor:
 
     def _emit(self, event_type: str, payload: dict[str, Any] | None = None, *, agent_id: str | None = None, strategy_id: str | None = None) -> dict[str, Any]:
         return self.store.add_factory_event(event_type, payload or {}, agent_id=agent_id, strategy_id=strategy_id)
+
+    def persist_trades(self) -> None:
+        rows = [r for account in self.population.accounts.values() for r in account.closed_trade_log]
+        if rows:
+            self.store.save_trades(rows)
+            for account in self.population.accounts.values():
+                account.closed_trade_log.clear()
 
     def pnl_state(self) -> dict[str, Any]:
         def summarize(rows):
@@ -418,6 +426,7 @@ class DarwinSupervisor:
             pending = self.store.recent_engineer_tasks(12)
             if not any(t.get("status") == "PREPARED" for t in pending):
                 self.prepare_engineer_task("Investigate research stagnation: compare fees, mutation coverage and next-window evidence. Propose isolated, tested code changes; never modify execution permissions.")
+        self.persist_trades()
         self.population.reset_epoch()
         self.baseline.reset_epoch()
         self.checkpoint()
@@ -579,6 +588,8 @@ class DarwinSupervisor:
             "status_counts": statuses,
             "champion": champion,
             "leaderboard": rows[:25],
+            "recent_trades": self.store.recent_trades(),
+            "trade_history_note": "Journal available only since trade logging was installed; last 10000 closes retained. Older individual trades cannot be reconstructed from epoch totals.",
             "cycle": self.cycle_state(rows),
             "epoch_seconds": self.epoch_seconds,
             "seconds_since_epoch": max(0.0, time.time() - self.last_epoch),

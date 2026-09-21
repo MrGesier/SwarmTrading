@@ -67,6 +67,8 @@ class PaperAccount:
     closed_pnls: deque[float] = field(default_factory=lambda: deque(maxlen=500))
     holding_seconds: deque[float] = field(default_factory=lambda: deque(maxlen=500))
     equity_curve: deque[tuple[float, float]] = field(default_factory=lambda: deque(maxlen=4_000))
+    closed_trade_log: deque = field(default_factory=lambda: deque(maxlen=100))
+    episode_start_fees: float | None = None
     last_signal: float = 0.0
     regime_closed_pnls: dict[str, deque[float]] = field(default_factory=lambda: defaultdict(lambda: deque(maxlen=500)))
 
@@ -124,6 +126,13 @@ class PaperAccount:
         close_ts = float(state["timestamp"])
         if self.episode_opened_at is not None:
             self.holding_seconds.append(max(0.0, close_ts - self.episode_opened_at))
+        self.closed_trade_log.append({"strategy_id": self.strategy["id"],
+            "opened_at": self.episode_opened_at, "closed_at": close_ts,
+            "direction": "LONG" if side < 0 else "SHORT",
+            "entry_mid": self.episode_entry_mid, "exit_mid": float(state["features"]["mid"]),
+            "net_pnl_usd": pnl,
+            "fees_usd": self.fees - self.episode_start_fees if self.episode_start_fees is not None else None,
+            "reason": reason})
         self.last_closed_at = close_ts
         self.episode_start_equity = None
         self.episode_regime = None
@@ -139,8 +148,10 @@ class PaperAccount:
         mid = float(state["features"]["mid"])
         quantity = self.notional_usd / max(mid, 1e-12)
         start_equity = self.equity(mid)
+        start_fees = self.fees
         filled = self._trade(target, quantity, state)
         if filled > 0:
+            self.episode_start_fees = start_fees
             self.episode_start_equity = start_equity
             self.episode_regime = str(state.get("regime") or "UNKNOWN")
             self.episode_opened_at = float(state["timestamp"])

@@ -94,6 +94,8 @@ type DarwinState = {
   status_counts: Record<string, number>;
   champion: Strategy | null;
   leaderboard: Leader[];
+  recent_trades?: Array<{strategy_id:string;opened_at:number|null;closed_at:number;direction:string;entry_mid:number|null;exit_mid:number;net_pnl_usd:number;fees_usd:number|null;reason:string}>;
+  auto_epoch_enabled?: boolean;
   epoch_seconds: number;
   seconds_since_epoch: number;
   lessons: Lesson[];
@@ -230,16 +232,16 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
       <div className="darwin-hero">
         <div>
           <span className="eyebrow"><Dna size={14} /> EVOLUTION ENGINE · V0.11 OPENAI BRAIN + OPENBOT</span>
-          <h2>Champion / Challenger loop</h2>
-          <p>Every genome sees the same market stream. Performance, evidence quality and multiple-testing risk are measured separately before any strategy is promoted. Live execution remains a separate permission boundary.</p>
+          <h2>Résultats et activité paper</h2>
+          <p>Chaque stratégie possède un compte simulé indépendant. Les résultats incluent les frais modélisés ; la sélection et les mutations se suivent dans Factory.</p>
         </div>
-        <button className="primary" onClick={runJudge} disabled={busy}><BrainCircuit size={16} /> {busy ? "Judging…" : "Run Judge now"}</button>
+        <div className="judge-auto-note"><b>{state.auto_epoch_enabled?"JUDGE automatique activé":"JUDGE automatique désactivé"}</b><small>La sélection se déclenche à l’échéance si les preuves sont suffisantes.</small><details><summary>Commande manuelle facultative</summary><button onClick={runJudge} disabled={busy}><BrainCircuit size={16} /> {busy ? "Sélection…" : "Anticiper le cycle maintenant"}</button></details></div>
       </div>
 
       {message && <div className="darwin-message">{message}</div>}
       {state.error && <div className="darwin-message error">Darwin runtime: {state.error}</div>}
 
-      {agents && <section className="agent-architecture">
+      <details className="advanced-panel"><summary>Architecture technique des agents</summary>{agents && <section className="agent-architecture">
         <div className="darwin-card-head"><span><BrainCircuit size={16} /> Agent architecture</span><small>{agents.architecture}</small></div>
         <div className="agent-flow">
           {agents.agents.map((agent, index) => <React.Fragment key={agent.id}>
@@ -251,16 +253,16 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
           </React.Fragment>)}
         </div>
         <div className="agent-safety-note"><ShieldCheck size={15} /> ATLAS/CURIE/EVOLVE/MNEMOSYNE reason with OpenAI; JUDGE is hybrid. FORGE/CERBERUS/HERMES remain deterministic authority code.</div>
-      </section>}
+      </section>}</details>
 
       <div className="darwin-kpis">
-        <div><small>LIVE POPULATION</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER ?? 0} challengers · {state.historical_population} ever created</span></div>
+        <div><small>STRATÉGIES PAPER</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER ?? 0} challengers · {state.historical_population} ever created</span></div>
         <div><small>CHAMPION</small><b className="positive">{state.champion?.id ?? "No promotion yet"}</b><span>{championMetric ? `${signed(championMetric.return_bps, 1)} bp · evidence ${pct(championMetric.evidence_weight)}` : "Waiting for sufficient evidence"}</span></div>
-        <div><small>PAPER CAPITAL / GENOME</small><b>${fmt(state.paper.notional_usd, 0)}</b><span>{fmt(state.paper.fee_bps, 1)} bp / fill</span></div>
-        <div><small>NEXT AUTO EPOCH</small><b>{duration(Math.max(0, state.epoch_seconds - state.seconds_since_epoch))}</b><span>default cycle {duration(state.epoch_seconds)}</span></div>
+        <div><small>CAPITAL SIMULÉ / STRATÉGIE</small><b>${fmt(state.paper.notional_usd, 0)}</b><span>{fmt(state.paper.fee_bps, 1)} bp / fill</span></div>
+        <div><small>PROCHAINE SÉLECTION</small><b>{duration(Math.max(0, state.epoch_seconds - state.seconds_since_epoch))}</b><span>default cycle {duration(state.epoch_seconds)}</span></div>
       </div>
 
-      <section className="research-cockpit">
+      <details className="advanced-panel"><summary>Diagnostics de sélection et budget IA</summary><section className="research-cockpit">
         <div className="darwin-card-head"><span><FlaskConical size={16} /> Research cockpit</span><small>evidence before narrative</small></div>
         <div className="research-kpis">
           <div><small>EVIDENCE READY</small><b>{research?.evidence.eligible ?? 0}/{research?.evidence.population ?? state.population}</b><span>{research?.evidence.multiple_test_pass ?? 0} clear selection-bias guard</span></div>
@@ -268,27 +270,32 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
           <div><small>MARKET / BENCHMARK</small><b>{research?.market.regime ?? "WAITING"}</b><span>BTC {signed(research?.benchmark.market_return_bps ?? state.benchmark?.market_return_bps ?? 0, 1)} bp · vol {fmt(research?.market.volatility ?? 0, 2)}</span></div>
           <div><small>OPENAI · 24H</small><b>{usage?.calls ?? 0} calls · ${fmt(usage?.estimated_cost_usd ?? 0, 4)}</b><span>{tokenFmt((usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0))} tokens · {usage?.ok_calls ?? 0} successful</span></div>
         </div>
-      </section>
+      </section></details>
 
-      {research?.family_cells?.length ? <section className="darwin-card family-map-card">
+      <details className="advanced-panel"><summary>Détail par famille et horizon</summary>{research?.family_cells?.length ? <section className="darwin-card family-map-card">
         <div className="darwin-card-head"><span><Dna size={16} /> Family × horizon map</span><small>population cells · mean evidence-weighted fitness</small></div>
         <div className="family-map">{research.family_cells.slice(0, 16).map((cell) => <div className="family-cell" key={`${cell.family}-${cell.horizon}`}>
           <div><b>{cell.family}</b><span>{horizonLabel(cell.horizon)}</span></div>
           <strong className={cell.mean_live_fitness >= 0 ? "positive" : "negative"}>{signed(cell.mean_live_fitness, 1)}</strong>
           <small>{signed(cell.mean_return_bps, 1)} bp raw · {cell.evidence_pass}/{cell.n} pass</small>
         </div>)}</div>
-      </section> : null}
+      </section> : null}</details>
 
+      <section className="darwin-card trade-journal">
+        <div className="darwin-card-head"><span>Derniers trades paper clôturés</span><small>{state.symbol} · {state.mode} · toutes les stratégies</small></div>
+        <p>Journal enregistré depuis cette mise à jour, conservé entre les cycles. Les anciennes opérations individuelles ne peuvent pas être reconstituées. Prix affichés : milieu du carnet, pas prix d'exécution.</p>
+        {!(state.recent_trades??[]).length?<p className="journal-empty">Aucune clôture journalisée pour le moment. Les positions ouvertes apparaissent dans le classement ; le journal se remplit automatiquement après clôture.</p>:<div className="darwin-table-wrap"><table className="darwin-table"><thead><tr><th>Clôture</th><th>Stratégie</th><th>Sens</th><th>Entrée / sortie · prix repère</th><th>Net USD</th><th>Frais USD</th><th>Sortie</th></tr></thead><tbody>{(state.recent_trades??[]).slice(0,50).map((t,i)=><tr key={`${t.strategy_id}-${t.closed_at}-${i}`}><td>{new Date(t.closed_at*1000).toLocaleString()}</td><td><button className="strategy-name-button" onClick={()=>void inspectStrategy(t.strategy_id)}>{t.strategy_id}</button></td><td>{t.direction}</td><td>{t.entry_mid==null?"—":fmt(t.entry_mid,2)} / {fmt(t.exit_mid,2)}</td><td className={t.net_pnl_usd>=0?"positive":"negative"}>{signed(t.net_pnl_usd,2)}</td><td>{t.fees_usd==null?"—":fmt(t.fees_usd,2)}</td><td>{t.reason}</td></tr>)}</tbody></table></div>}
+      </section>
       <div className="darwin-grid">
         <section className="darwin-card leaderboard-card">
-          <div className="darwin-card-head"><span><Trophy size={16} /> Live leaderboard</span><small>click a genome to inspect lineage</small></div>
+          <div className="darwin-card-head"><span><Trophy size={16} /> Classement des stratégies paper</span><small>fenêtre courante · classement par score de recherche</small></div>
           <div className="darwin-table-wrap"><table className="darwin-table research-table">
-            <thead><tr><th>#</th><th>Genome</th><th>Family</th><th>H</th><th>Gen</th><th>Return</th><th>Alpha</th><th>DD</th><th>Trades</th><th>PF</th><th>Z</th><th>Evidence</th><th>Fitness</th></tr></thead>
-            <tbody>{state.leaderboard.slice(0, 20).map((r, i) => <tr key={r.strategy_id} onClick={() => void inspectStrategy(r.strategy_id)} className={`${r.status === "CHAMPION" ? "champion-row " : ""}clickable-row`}>
-              <td>{i + 1}</td><td className="mono">{r.strategy_id}</td><td>{r.family}</td><td>{horizonLabel(r.horizon)}</td><td>{r.generation}</td>
-              <td className={r.return_bps >= 0 ? "positive" : "negative"}>{signed(r.return_bps, 1)}</td><td className={(r.alpha_vs_market_bps ?? 0) >= 0 ? "positive" : "negative"}>{signed(r.alpha_vs_market_bps ?? 0, 1)}</td><td>{fmt(r.max_drawdown_bps, 1)}</td><td>{r.closed_trades}</td>
-              <td>{r.profit_factor == null ? "—" : r.profit_factor >= 99 ? "∞" : fmt(r.profit_factor, 2)}</td>
-              <td className={r.multiple_test_pass ? "positive" : ""}>{fmt(r.trade_z ?? 0, 2)}</td><td>{pct(r.evidence_weight)}</td><td>{fmt(r.live_fitness, 1)}</td>
+            <caption>Les compteurs repartent à zéro à chaque cycle. Une stratégie sans trade peut devancer une stratégie en perte. Cliquer sur son nom ouvre son historique de cycles.</caption>
+            <thead><tr><th>#</th><th>Stratégie</th><th>Horizon / génération</th><th>PnL net USD</th><th>Rendement %</th><th>Frais USD</th><th>Trades clos · cycle / antérieurs</th><th>Position</th></tr></thead>
+            <tbody>{state.leaderboard.slice(0,20).map((r,i)=><tr key={r.strategy_id} className={r.status==="CHAMPION"?"champion-row":""}>
+              <td>{i+1}</td><td><button className="strategy-name-button" onClick={()=>void inspectStrategy(r.strategy_id)} title={r.strategy_id}>{r.family}<small>{r.strategy_id}</small></button></td>
+              <td>{horizonLabel(r.horizon)} · G{r.generation}</td><td className={r.pnl>=0?"positive":"negative"}>{signed(r.pnl,2)}</td><td>{signed(r.return_bps/100,2)} %</td><td>{fmt(r.fees,2)}</td>
+              <td>{r.closed_trades} / {r.lifetime?.lifetime_closed_trades??0}<small>{r.closed_trades===0?"Aucune clôture ce cycle":""}</small></td><td>{r.position>0?"LONG":r.position<0?"SHORT":"À plat"}</td>
             </tr>)}</tbody>
           </table></div>
         </section>
@@ -325,7 +332,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
 
       <section className="darwin-card memory-card">
         <div className="darwin-card-head"><span><BrainCircuit size={16} /> Experience memory</span><small>SQLite · cumulative · evidence-backed</small></div>
-        <div className="memory-list">{state.lessons.length ? state.lessons.map((lesson) => <div key={lesson.id}><span className="memory-icon">{lesson.kind === "champion" ? <Trophy size={14} /> : <Dna size={14} />}</span><div><b>{lesson.kind.replaceAll("_", " ")}</b><p>{JSON.stringify(lesson.payload)}</p></div><small>{Math.round(lesson.confidence * 100)}% conf.</small></div>) : <p className="muted">No frozen lesson yet. Run the market long enough, then launch a Judge epoch.</p>}</div>
+        <div className="memory-list">{state.lessons.length ? state.lessons.map((lesson) => <div key={lesson.id}><span className="memory-icon">{lesson.kind === "champion" ? <Trophy size={14} /> : <Dna size={14} />}</span><div><b>{lesson.kind.replaceAll("_", " ")}</b><p>{JSON.stringify(lesson.payload)}</p></div><small>{Math.round(lesson.confidence * 100)}% conf.</small></div>) : <p className="muted">Aucune leçon enregistrée. Laisser Darwin collecter les observations : JUDGE interviendra automatiquement à la prochaine échéance.</p>}</div>
       </section>
     </div>
   );

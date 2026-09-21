@@ -140,12 +140,12 @@ def agent_runtime_state(*, darwin_state: dict[str, Any], execution_state: dict[s
     challengers = int(darwin_state.get("status_counts", {}).get("CHALLENGER", 0))
 
     statuses = {
-        "atlas": ("ERROR" if darwin_error else "RUNNING", "Orchestrating current population" if not darwin_error else darwin_error),
+        "atlas": ("ERROR" if darwin_error else "AUTO", "Orchestrating current population" if not darwin_error else darwin_error),
         "curie": ("READY" if evidence_ready else "WAITING", "Evidence available for a new hypothesis" if evidence_ready else "Waiting for minimum sample/trades"),
         "evolve": ("ACTIVE" if challengers else "READY", f"{challengers} challenger(s) alive" if challengers else "Ready to create controlled mutations"),
         "forge": ("RUNNING" if population and health == "HEALTHY" else "PAUSED", f"{population} isolated paper accounts · market {health}"),
         "judge": ("READY" if evidence_ready else "WAITING", "Selection criteria satisfied" if evidence_ready else "Insufficient frozen evidence"),
-        "mnemosyne": ("LEARNING" if lessons else "EMPTY", f"{len(lessons)} recent lesson(s) loaded" if lessons else "No completed epoch lesson yet"),
+        "mnemosyne": ("ARCHIVED" if lessons else "EMPTY", f"{len(lessons)} recent lesson(s) loaded" if lessons else "No completed epoch lesson yet"),
         "cerberus": ("ARMED" if execution_state.get("ready") else "LOCKED", "Execution checks armed" if execution_state.get("ready") else "External execution blocked"),
         "hermes": ("READY" if execution_state.get("ready") else "LOCKED", f"{execution_state.get('network', 'testnet')} · max ${execution_state.get('max_notional_usd', 0):.0f}"),
     }

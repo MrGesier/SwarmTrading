@@ -274,3 +274,20 @@ def test_repeated_mutation_explores_new_bounded_gene(tmp_path, monkeypatch):
         assert saved[0]['active']['mean_fees_usd'] > 0
     finally:
         supervisor.store.close()
+
+
+def test_trade_journal_net_fees_and_idempotent_persistence(tmp_path):
+    from darwin.paper import PaperAccount
+    account = PaperAccount(dict(id='journal',family='Momentum',horizon=1,threshold=.01,gain=2))
+    account.observe(state(1000,100))
+    account.observe(state(1001,101,'STALE'))
+    trade = account.closed_trade_log[0]
+    assert trade['direction'] == 'LONG'
+    assert trade['opened_at'] == 1000 and trade['closed_at'] == 1001
+    assert trade['fees_usd'] == pytest.approx(account.fees)
+    assert trade['net_pnl_usd'] == pytest.approx(account.cash)
+    store = DarwinStore(tmp_path/'trades.sqlite')
+    store.save_trades([trade]); store.save_trades([trade]); store.close()
+    reopened = DarwinStore(tmp_path/'trades.sqlite')
+    assert reopened.recent_trades() == [trade]
+    reopened.close()

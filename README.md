@@ -56,7 +56,7 @@ This verifies research mechanics, not trading performance. See [V1_VALIDATION.md
 - **Simulation** starts immediately with deterministic synthetic market events. It is always visibly labeled. These prices are not current market prices.
 - Choose **Live** for Hyperliquid public perp `l2Book`, trades and asset-context streams. BTCUSDT, ETHUSDT, and SOLUSDT map to BTC, ETH and SOL perps. Live mode is still paper execution unless the separate Hyperliquid execution gate is explicitly enabled.
 - Select a **1s, 5s, 30s, 1 minute, or 3 minute horizon** to scope the consensus, swarm bars, and strategy table. Market intent, entropy, trigger density, and effective count use the full population and are global metrics.
-- **Market cockpit** shows 5-second OHLCV candles built from received trades, received-window VWAP, a midpoint and trigger overlay, recorded resting-liquidity heatmap, book metrics, swarm, entropy, and explanatory signal transitions.
+- **Marché** shows 5-second OHLCV candles built from received trades, received-window VWAP, a midpoint and trigger overlay, recorded resting-liquidity heatmap, book metrics, swarm, entropy, and explanatory signal transitions.
 - **Intent lab** reevaluates the same genomes for changes to price, volatility, and flow. It includes a phase plane, consensus by horizon, and liquidity along trigger paths.
 - **Swarm lab** filters strategies by family and horizon. Click a genome for its actual parameters, signal, and decorrelated weight.
 - **Replay lab → Capture session** freezes up to the latest 300 derived frames from the current session. Play, pause, change speed, or seek with the slider/candles. Every panel uses the selected historical state. Reloading a capture replaces the replay window.
@@ -124,7 +124,7 @@ The surface and fragility are local model sensitivities. They do not provide cal
 
 SwarmTrade now contains a **paper-first strategy evolution engine**. The original 320 transparent genomes are the generation-0 population. Every active genome receives the same market state and trades an isolated paper account using visible order-book levels plus a configurable fee assumption. This gives Darwin comparable PnL, return, turnover, drawdown, closed-trade count and win-rate evidence instead of asking an LLM which strategy “looks best”.
 
-Open **Darwin lab** in the sidebar to see the live leaderboard, current champion, selection history, cumulative lessons and Hyperliquid execution status. A Judge epoch can be triggered manually for research; the automatic interval defaults to 24 hours (`DARWIN_EPOCH_SECONDS=86400`). A Judge epoch only runs when at least one strategy has the configured minimum sample and closed-trade evidence. At an accepted epoch Darwin:
+Open **Recherche et trades** in the sidebar to see the live leaderboard, current champion, selection history, cumulative lessons and Hyperliquid execution status. A Judge epoch can be triggered manually for research; the automatic interval defaults to 24 hours (`DARWIN_EPOCH_SECONDS=86400`). A Judge epoch only runs when at least one strategy has the configured minimum sample and closed-trade evidence. At an accepted epoch Darwin:
 
 1. freezes the common paper window and closes remaining paper positions through the visible book;
 2. computes risk-adjusted fitness deterministically;
@@ -294,3 +294,12 @@ Raw event recording can be disabled or bounded with `DARWIN_RECORD_RAW` and `DAR
 V0.11 makes Darwin's progress auditable over time instead of showing only the current leaderboard. `GET /api/darwin/evolution` reconstructs an epoch-by-epoch history from SQLite: champion alpha, fitness, fee-stress survival, evidence weight, drawdown, generations, family wins and Genome V2 mutation pressure. The Factory embeds the same object and displays an Evolution Observatory with `IMPROVING / FLAT / REGRESSING` trend states. These are explicitly paper-research metrics, not a prediction of future live profitability.
 
 The visual identities are also role-specific rather than eight identical trolls: Atlas Owl, Curie Frog, Evolve Chameleon, Forge Bot, Judge Lion, Memory Octopus, Cerberus Hound, Hermes Bird and Codex Raccoon. See `EVOLUTION_OBSERVATORY.md` and `V0.11_CHANGELOG.md`.
+
+
+### Navigation et journal paper
+
+Trois vues principales : **Marché** pour les données et signaux, **Recherche et trades** pour les positions, clôtures et classements, **Factory** pour les cycles, mutations et comparaisons de rendement. Les anciens laboratoires restent dans **Diagnostics avancés**. Le sélecteur d’horizon et les indicateurs de consensus du marché ne sont pas affichés sur Darwin : ils décrivent une autre population.
+
+Le journal conserve les 10 000 dernières clôtures paper par base symbole/mode, y compris entre les cycles et redémarrages ; l’écran affiche les 50 dernières. Chaque ligne expose le résultat net, les frais connus et la raison de sortie. Les prix affichés sont les milieux de carnet de référence, pas les prix exécutés. Les trades antérieurs à cette fonctionnalité ne sont pas reconstruits ; les frais d’une position déjà ouverte avant la mise à jour peuvent être inconnus. La sauvegarde suit les checkpoints (une interruption brutale peut perdre les dernières secondes).
+
+JUDGE et les mutations fonctionnent automatiquement lorsque les conditions du cycle sont remplies. La commande manuelle est facultative. Les tâches d’ingénierie sont préparées automatiquement en cas de stagnation ; l’exécution et l’adoption de code autonome restent à implémenter.

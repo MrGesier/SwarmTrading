@@ -61,7 +61,7 @@ function CrownBurst({event}:{event?:FactoryEvent}){if(!event||event.type!=="cham
 
 function Sparkline({values,label}:{values:number[];label:string}){
   const clean=values.filter(v=>Number.isFinite(v));
-  if(clean.length<2)return <div className="evo-spark empty"><small>{label}</small><span>collecting epochs…</span></div>;
+  if(clean.length<2)return <div className="evo-spark empty"><small>{label}</small><span>Collecte des premières mesures…</span></div>;
   const min=Math.min(...clean), max=Math.max(...clean), span=Math.max(1e-9,max-min);
   const points=clean.map((v,i)=>`${(i/(clean.length-1))*100},${38-((v-min)/span)*34}`).join(" ");
   return <div className="evo-spark"><small>{label}</small><svg viewBox="0 0 100 42" preserveAspectRatio="none"><polyline points={points}/></svg><b>{signed(clean.at(-1),1)}</b></div>;
@@ -130,36 +130,36 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const trend=String(evolution.trend??"WAITING");
   return <div className="factory-page">
     <header className="factory-hero">
-      <div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Watch the factory learn.</h2><p>Different characters, real events, persistent generations — and an observable paper-research improvement trail.</p></div>
+      <div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Recherche automatique</h2><p>Observer → sélectionner → muter → mesurer. Les cycles et les comparaisons montrent si les descendants progressent.</p></div>
       <div className="factory-live"><span className="pulse-dot"/><b>{connected?state.market.health:"DISCONNECTED · RECONNECTING"}</b><small>{state.market.regime} · {state.symbol}</small></div>
     </header>
-    <p role="status">{state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Research provider configured · connection succeeds only after an actual run":"Research provider unavailable · deterministic fallback · no LLM run active"}</p>
+    <p role="status">{state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Research provider configured · connection succeeds only after an actual run":"Recherche automatique déterministe · fournisseur IA indisponible"}</p>
     <div className="factory-strip">
       <div><small>POPULATION</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER??0} challengers</span></div>
       <div><small>CHAMPION</small><b className="gold">{state.champion?.id??"No crown yet"}</b><span>{state.champion?.metrics?`${signed(state.champion.metrics.return_bps)} bp`:"collecting evidence"}</span></div>
       <div><small>MARKET</small><b>{signed(state.market.benchmark_return_bps)} bp</b><span>epoch benchmark</span></div>
-      <div><small>LAST VERDICT</small><b>{lastJudge?.payload?.decision??"WAIT"}</b><span>{lastJudge?.strategy_id??"Judge is watching"}</span></div>
-      <div><small>OPENAI 24H</small><b>${fmt(state.research?.llm_usage_24h?.estimated_cost_usd??0,4)}</b><span>{state.research?.llm_usage_24h?.calls??0} calls</span></div>
+
+      <div><small>IA · COÛT ESTIMÉ 24H</small><b>${fmt(state.research?.llm_usage_24h?.estimated_cost_usd??0,4)}</b><span>{state.research?.llm_usage_24h?.calls??0} tentatives</span></div>
     </div>
 
-    <section className="evolution-observatory" aria-label="Paper PnL">
+    <section className="evolution-observatory pnl-panel" aria-label="Paper PnL">
       <h3>PnL paper net de frais · fenêtre en cours</h3>
-      <p>Moyenne par stratégie indépendante, pas un portefeuille investi. Les courbes repartent à zéro à chaque cycle ; les fenêtres précédentes restent dans les comparaisons ci-dessous.</p>
+      <p>Résultat moyen par stratégie après frais. Fenêtre en cours : les compteurs repartent à zéro à chaque cycle.</p>
       <div className="factory-strip">
         <div><small>STRATÉGIES ACTIVES · NET</small><b>{fmt(state.pnl?.active?.mean_net_usd)} USD</b><span>{fmt(state.pnl?.active?.mean_net_bps)} bp · {state.pnl?.active?.count??0} stratégies</span></div>
         <div><small>FRAIS MOYENS DÉDUITS</small><b>{fmt(state.pnl?.active?.mean_fees_usd)} USD</b><span>{state.pnl?.fee_bps_per_fill??"—"} bp par fill · nominal {state.pnl?.notional_per_strategy_usd??"—"} USD/stratégie</span></div>
         <div><small>TÉMOIN G0 · NET</small><b>{fmt(state.pnl?.fixed_g0?.mean_net_usd)} USD</b><span>{state.pnl?.fixed_g0?.count??0} stratégies conservées</span></div>
         <div><small>DESCENDANTS · NET</small><b>{fmt(state.pnl?.descendants?.mean_net_usd)} USD</b><span>{state.pnl?.descendants?.count??0} descendants</span></div>
       </div>
-      <div className="evo-sparks">{["active","fixed_g0","descendants"].map(group=><Sparkline key={group} label={`${group} · net USD`} values={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start&&x[group]?.mean_net_usd!=null).map(x=>x[group].mean_net_usd)}/>)}</div>
-      {!state.pnl?.control_window_matches && <p role="status">Attention : le témoin G0 a démarré sur une autre fenêtre. Ses chiffres actuels ne sont pas comparables aux descendants ; attendre un cycle commun complet.</p>}
-      <p>Historique échantillonné chaque minute. Spread, profondeur visible et frais modélisés ; funding et impact réel non modélisés. Aucune aptitude au live démontrée.</p>
+      <div className="evo-sparks">{["active","fixed_g0","descendants"].map(group=><Sparkline key={group} label={`${group==="active"?"Stratégies actives":group==="fixed_g0"?"Témoin G0":"Descendants"} · net USD`} values={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start&&x[group]?.mean_net_usd!=null).map(x=>x[group].mean_net_usd)}/>)}</div>
+      {!state.pnl?.control_window_matches && <p role="status">Comparaison en attente : G0 et descendants ont démarré sur des fenêtres différentes.</p>}
+      <details className="pnl-method"><summary>Comprendre ces chiffres et les frais</summary><p>Chaque stratégie possède un compte paper indépendant : leur moyenne n’est pas un portefeuille. Historique par minute. Spread, profondeur visible et frais modélisés ; funding et impact réel non modélisés. Aucune aptitude au live démontrée.</p></details>
     </section>
     <section className="factory-strip" aria-label="Research cycle">
-      <div><small>RESEARCH CYCLE</small><b>{state.cycle?.status??"WAITING"}</b><span>{Math.ceil((state.cycle?.seconds_remaining??0)/60)} min until scheduled selection</span></div>
+      <div><small>CYCLE AUTOMATIQUE</small><b>{state.cycle?.status??"WAITING"}</b><span>{Math.ceil((state.cycle?.seconds_remaining??0)/60)} min avant la sélection automatique</span></div>
       <div><small>EVIDENCE READY</small><b>{state.cycle?.eligible??0} / {state.cycle?.population??0}</b><span>Requires {state.cycle?.min_sample_seconds??"—"} seconds and {state.cycle?.min_closed_trades??"—"} closed trades per strategy</span></div>
       <div><small>RECURSIVE LOOP</small><b>G0 → G{state.cycle?.max_generation??0}</b><span>Measure → select → mutate one gene → test next window → repeat</span></div>
-      <div><small>LAST COMPLETED CYCLE</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
+      <div><small>DERNIER CYCLE TERMINÉ</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
     </section>
     <section className="factory-shell">
       <aside className="factory-side left">
@@ -170,15 +170,13 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         <div className="pulse-card"><span>🧠</span><div><b>OpenAI research brain</b><small>Sol → Sol → Terra · Judge critic · Luna memory</small></div></div>
         <div className="pulse-card"><span>🧬</span><div><b>Genome V{state.research?.genome?.version??2}</b><small>{geneCatalog.length} bounded genes · one variable per experiment</small></div></div>
         <div className="pulse-card"><span>🤖</span><div><b>OpenBot {state.openbot?.enabled?"ONLINE":"OPTIONAL"}</b><small>{state.openbot?.enabled?"4 local AG-UI coworkers available":"not connected · optional extras + token required"}</small></div></div>
-        <div className="genome-lab"><h4>Genome V2 genes</h4><div>{geneCatalog.map((g:any)=><span key={g.name} title={g.description}>{g.label??g.name}</span>)}</div></div>
-        <div className="mini-leaders"><h4>Top genomes</h4>{state.leaderboard.slice(0,6).map((r,i)=><button key={r.strategy_id} onClick={()=>void inspect(r.strategy_id)}><span>{i+1}</span><b>{r.strategy_id}</b><em className={(r.return_bps??0)>=0?"positive":"negative"}>{signed(r.return_bps)} bp</em></button>)}</div>
+        <details className="advanced-panel"><summary>Catalogue des mutations</summary><div className="genome-lab"><h4>Genome V2 genes</h4><div>{geneCatalog.map((g:any)=><span key={g.name} title={g.description}>{g.label??g.name}</span>)}</div></div></details>
       </aside>
 
       <main className="factory-floor">
         <div className="factory-smoke smoke-a"/><div className="factory-smoke smoke-b"/>
         <EventCourier event={liveEvent}/><JudgeStamp event={liveEvent}/><CrownBurst event={liveEvent}/>
-        <div className="engineer-loft"><div className="engineer-avatar">🦝<span>🧑‍💻</span></div><div><small>ABOVE THE FACTORY · CODE ONLY</small><b>CODEX ENGINEER</b><p>{state.engineer?.engineer?.detail??"Engineering agent isolated from capital and trading authority."}</p></div><div className="engineer-meta"><span>{state.engineer?.engineer?.model??"gpt-6-astra"}</span><span>{state.engineer?.engineer?.enabled?"ENABLED":"MANUAL"}</span><button onClick={()=>void prepareEngineerTask()} disabled={engineerBusy}><Wrench size={13}/>{engineerBusy?"Preparing…":"Prepare task"}</button></div></div>
-        <div className="brain-rail"><span><b>🧠 RESEARCH BRAINS</b> ATLAS Sol · CURIE Sol · EVOLVE Terra · JUDGE hybrid · MNEMOSYNE Luna</span><span><b>🤖 OPENBOT</b> {state.openbot?.enabled?"4 coworkers online":"bridge optional"}</span><span><b>⚙️ AUTHORITY CODE</b> FORGE · CERBERUS · HERMES</span></div>
+        <div className="engineer-loft"><div className="engineer-avatar">🦝<span>🧑‍💻</span></div><div><small>ABOVE THE FACTORY · CODE ONLY</small><b>CODEX ENGINEER</b><p>{"Les tâches sont préparées automatiquement en cas de stagnation. Leur exécution et l’adoption du code ne sont pas encore connectées."}</p></div><div className="engineer-meta"><span>{state.engineer?.engineer?.model??"gpt-6-astra"}</span><span>{"EXÉCUTION NON CONNECTÉE"}</span><button onClick={()=>void prepareEngineerTask()} disabled={engineerBusy}><Wrench size={13}/>{engineerBusy?"Préparation…":"Ajouter une tâche (facultatif)"}</button></div></div>
         <div className="factory-row top">
           <Character agent={A("atlas")} selected={selectedAgent==="atlas"} active={activeAgent==="atlas"} dimmed={isDim("atlas")} onClick={()=>setSelectedAgent(selectedAgent==="atlas"?null:"atlas")}/>
           <Conveyor label="attention / budget" hot={activeAgent==="atlas"||activeAgent==="curie"}/>
@@ -235,14 +233,11 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
 
     <section className="factory-playback">
             <div className="evolution-chart-card">
-        <h4>Frozen G0 control vs descendants · net paper returns</h4>
+        <h4>Progression mesurée · G0 conservés et descendants</h4>
         <p>All original G0 strategies remain in the control. Descendants are measured in the window after creation, before selection. Same fees; uncertainty unestimated. Historical windows are not backfilled.</p>
         {!(evolution.fixed_baseline_comparisons??[]).length && <p>Waiting for the first completed cycle with the new G0 control. A matched comparison needs descendants and a full common window.</p>}
         <div style={{overflowX:"auto"}}><table><thead><tr><th>Epoch / status</th><th>Window s</th><th>G0 net bp / trades</th><th>Descendants net bp / trades</th><th>Market bp</th><th>Mean drawdown G0 / descendants bp</th></tr></thead><tbody>{(evolution.fixed_baseline_comparisons??[]).slice(-12).map((r:any)=><tr key={r.epoch_id} title={r.reason}><td>{r.epoch_id} · {r.status}</td><td>{fmt(r.sample_seconds,0)}</td><td>{fmt(r.g0_mean_return_bps)} / {r.g0_trades}</td><td>{fmt(r.descendant_mean_return_bps)} / {r.descendant_trades}</td><td>{fmt(r.market_return_bps)}</td><td>{fmt(r.g0_mean_drawdown_bps)} / {fmt(r.descendant_mean_drawdown_bps)}</td></tr>)}</tbody></table></div>
       </div>
-<h3>G0 vs descendants — same epoch</h3>
-      <p>Selected surviving cohorts; equal engine fee policy. Uncertainty unestimated. Missing G0 are not imputed; this does not establish causal progress.</p>
-      <div style={{overflowX:"auto"}}><table><thead><tr><th>Epoch</th><th>Window</th><th>G0 mean bp / trades</th><th>Descendants mean bp / trades</th><th>Status</th></tr></thead><tbody>{(evolution.baseline_comparisons??[]).slice(-12).map((r:any)=><tr key={r.epoch_id}><td>{r.epoch_id}</td><td>{r.sample_seconds??"—"} s</td><td>{r.g0_mean_return_bps==null?"—":fmt(r.g0_mean_return_bps)} / {r.g0_trades}</td><td>{r.descendant_mean_return_bps==null?"—":fmt(r.descendant_mean_return_bps)} / {r.descendant_trades}</td><td>{r.status}</td></tr>)}</tbody></table></div>
       <div className="playback-head"><div><b>Factory recorder</b><small>{events.length} persisted events loaded · {replaying?(playback?"PLAYBACK":"PAUSED"):"LIVE"}</small></div><div className="playback-controls"><button onClick={()=>{setPlayback(false);setReplaying(false);setCursor(-1)}}><RotateCcw aria-label="Return to live" size={14}/></button><button aria-label={playback?"Pause playback":"Play playback"} className={playback?"active":""} onClick={()=>{if(!replaying){setReplayEvents(events);setReplaying(true);setCursor(0)}else if(cursor>=timeline.length-1){setCursor(0)}setPlayback(!playback)}}>{playback?<Pause size={15}/>:<Play size={15}/>}</button><button onClick={()=>setSpeed(speed===1?2:speed===2?4:speed===4?8:1)}><FastForward size={14}/> x{speed}</button></div></div>
       <div className="playback-scrub"><input aria-label="Playback event" type="range" min={0} max={Math.max(0,timeline.length-1)} value={Math.max(0,cursor<0?timeline.length-1:cursor)} onChange={e=>{selectEvent(Number(e.target.value))}}/><span>{liveEvent?`${time(liveEvent.ts)} · ${liveEvent.type.replaceAll("_"," ")}`:"waiting"}</span></div>
       <div className="event-filters">{eventKinds.map(k=><button key={k} className={eventFilter===k?"active":""} onClick={()=>setEventFilter(k)}>{k==="all"?"ALL":`${eventToken[k]??"•"} ${k.replaceAll("_"," ")}`}</button>)}</div>

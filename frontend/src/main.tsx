@@ -38,12 +38,12 @@ import { API, wsUrl } from "./api";
 const horizonLabel = (h: number) => (h >= 60 ? `${h / 60} min` : `${h}s`);
 
 const routes = [
-  { name: "Market cockpit", icon: Grid2X2, path: "/" },
-  { name: "Intent lab", icon: Zap, path: "/intent" },
-  { name: "Swarm lab", icon: Workflow, path: "/research" },
-  { name: "Replay lab", icon: RotateCcw, path: "/replay" },
-  { name: "Darwin lab", icon: FlaskConical, path: "/darwin" },
-  { name: "Factory crew", icon: Workflow, path: "/factory" },
+  { name: "Marché", icon: Grid2X2, path: "/" },
+  { name: "Diagnostic des signaux", icon: Zap, path: "/intent" },
+  { name: "Population des signaux", icon: Workflow, path: "/research" },
+  { name: "Replay du marché", icon: RotateCcw, path: "/replay" },
+  { name: "Recherche et trades", icon: FlaskConical, path: "/darwin" },
+  { name: "Factory", icon: Workflow, path: "/factory" },
 ];
 function Panel({
   title,
@@ -331,10 +331,10 @@ function App() {
           </span>
         </a>
         <div className="nav-label">
-          WORKSPACE <span>V0.3</span>
+          DARWIN <span>V0.11</span>
         </div>
         <nav>
-          {routes.map((r) => (
+          {routes.filter(r => ["/", "/darwin", "/factory"].includes(r.path)).map((r) => (
             <a
               key={r.path}
               className={route === r.path ? "active" : ""}
@@ -349,6 +349,7 @@ function App() {
               {route === r.path && <span className="nav-indicator" />}
             </a>
           ))}
+          <details className="nav-advanced"><summary>Diagnostics avancés</summary>{routes.filter(r => !["/", "/darwin", "/factory"].includes(r.path)).map(r => <a key={r.path} href={r.path} className={route===r.path?"active":""} onClick={e=>{e.preventDefault();navigate(r.path)}}><r.icon size={16}/>{r.name}</a>)}</details>
         </nav>
         <div className="sidebar-note">
           <Layers3 size={19} />
@@ -363,7 +364,7 @@ function App() {
           <span className={`dot ${isHealthy ? "" : "amber-dot"}`} />
           <div>
             {isHealthy ? "Engine operational" : "Engine waiting"}
-            <small>{s?.swarm.raw ?? 320} strategy genomes</small>
+            <small>{s?.swarm.raw ?? 320} signaux du marché</small>
           </div>
         </div>
         <div className="read-only">
@@ -375,7 +376,7 @@ function App() {
           <div className="breadcrumb">
             Workspace <ChevronRight size={14} />
             <strong>
-              {routes.find((r) => r.path === route)?.name ?? "Market cockpit"}
+              {routes.find((r) => r.path === route)?.name ?? "Marché"}
             </strong>
           </div>
           <div className="top-right">
@@ -402,7 +403,7 @@ function App() {
                 </span>
               </div>
               <h1>
-                {routes.find((r) => r.path === route)?.name ?? "Market cockpit"}
+                {routes.find((r) => r.path === route)?.name ?? "Marché"}
                 <span className="heading-dot" />
               </h1>
               <p>
@@ -411,9 +412,9 @@ function App() {
                   : route === "/research"
                     ? "Inspect independent hypotheses and effective support."
                     : route === "/darwin"
-                      ? "Evolve, test, kill and promote strategies from measured paper performance."
+                      ? "Consultez les trades clôturés, les positions et les résultats de chaque stratégie."
                       : route === "/factory"
-                        ? "Watch Darwin's factory crew research, forge, judge, remember and protect capital in real time."
+                        ? "Suivez les cycles automatiques, les mutations et leur performance mesurée."
                       : replay
                         ? "Rewind the whole terminal to the information available then."
                         : "Market structure, collective intent, and the space between."}
@@ -427,10 +428,10 @@ function App() {
                   void loadReplay();
                 }}
               >
-                <RotateCcw size={15} /> Open replay
+                <RotateCcw size={15} /> Replay du marché
               </button>
               <span className="paper">
-                <ShieldCheck size={14} /> {route === "/darwin" || route === "/factory" ? "Paper first" : "Read only"}
+                <ShieldCheck size={14} /> {route === "/darwin" || route === "/factory" ? "Trading simulé" : "Lecture seule"}
               </span>
             </div>
           </div>
@@ -492,9 +493,9 @@ function App() {
                 onChange={(e) => setMode(e.target.value)}
               >
                 <option value="simulation">◉ Simulation</option>
-                <option value="live">◉ Hyperliquid live</option>
+                <option value="live">◉ Hyperliquid · données réelles</option>
               </select>
-              <select
+              {route !== "/darwin" && route !== "/factory" && <><select
                 aria-label="Strategy horizon"
                 value={horizon}
                 onChange={(e) => setHorizon(Number(e.target.value))}
@@ -505,10 +506,10 @@ function App() {
                 <option value={60}>1 min horizon</option>
                 <option value={180}>3 min horizon</option>
               </select>
-              <Help label="Horizon" />
+              <Help label="Horizon" /></>}
             </div>
           </div>
-          {s && currentHorizon && !currentHorizon.ready && (
+          {route !== "/darwin" && route !== "/factory" && s && currentHorizon && !currentHorizon.ready && (
             <div className="notice">
               <Activity size={15} />
               Horizon {horizonLabel(horizon)} en échauffement · encore{" "}
@@ -561,7 +562,7 @@ function App() {
             </div>
           ) : (
             <>
-              <div className="metrics">
+              {route !== "/darwin" && route !== "/factory" && <div className="metrics">
                 <Metric
                   label="MARKET INTENT"
                   value={currentIntent?.replaceAll("_", " ") ?? "—"}
@@ -599,7 +600,7 @@ function App() {
                   values={undefined}
                   color="blue"
                 />
-              </div>
+              </div>}
               {route === "/darwin" && <DarwinLab symbol={symbol} mode={mode} />}
               {route === "/factory" && <DarwinFactory symbol={symbol} mode={mode} />}
               {replay && (
@@ -953,7 +954,7 @@ function App() {
                   >
                     <div className="lab-content">
                       <p>
-                        Re-evaluate the same strategy genomes under a nearby
+                        Re-evaluate the same signaux du marché under a nearby
                         market state.
                       </p>
                       {[
@@ -1211,7 +1212,7 @@ function App() {
                 </span>
                 <span>
                   Sequence {s.health.sequence} <i /> No order execution <i />{" "}
-                  V0.2
+                  V0.11
                 </span>
               </footer>
             </>
