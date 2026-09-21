@@ -136,7 +136,7 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
             # No shell, external tools, write permissions or user-defined MCP servers.
             model=os.getenv('CODEX_ENGINEER_MODEL','gpt-6-astra')
             cmd=[cli,'exec','--model',model,'--ignore-user-config','--ephemeral','--sandbox','read-only',
-                 '-c','approval_policy="never"','-c','features.shell_tool=false','-c','features.unified_exec=false',
+                 '-c','sqlite_home='+json.dumps(str(artifacts/'codex-state')),'-c','log_dir='+json.dumps(str(artifacts/'codex-logs')),'-c','approval_policy="never"','-c','features.shell_tool=false','-c','features.unified_exec=false',
                  '-c','features.plugins=false','-c','web_search="disabled"',
                  '--json','--output-schema',str(schema_path),'-o',str(response_path),'-']
             update(model=model)
