@@ -303,3 +303,12 @@ Trois vues principales : **Marché** pour les données et signaux, **Recherche e
 Le journal conserve les 10 000 dernières clôtures paper par base symbole/mode, y compris entre les cycles et redémarrages ; l’écran affiche les 50 dernières. Chaque ligne expose le résultat net, les frais connus et la raison de sortie. Les prix affichés sont les milieux de carnet de référence, pas les prix exécutés. Les trades antérieurs à cette fonctionnalité ne sont pas reconstruits ; les frais d’une position déjà ouverte avant la mise à jour peuvent être inconnus. La sauvegarde suit les checkpoints (une interruption brutale peut perdre les dernières secondes).
 
 JUDGE et les mutations fonctionnent automatiquement lorsque les conditions du cycle sont remplies. La commande manuelle est facultative. Les tâches d’ingénierie sont préparées automatiquement en cas de stagnation ; l’exécution et l’adoption de code autonome restent à implémenter.
+
+
+### Réaction autonome aux problèmes de recherche
+
+`DARWIN_AUTO_REPAIR_ENABLED=true` active un diagnostic chaque minute à partir des comptes mesurés. Après au moins 1 800 secondes observées et 20 clôtures par stratégie, des frais dominants chez au moins 25 % des stratégies évaluables, ou une perte supérieure à 100 bp chez au moins 50 %, avancent le prochain cycle à `DARWIN_REPAIR_INTERVAL_SECONDS` depuis le dernier cycle (3 600 s par défaut, minimum 1 800 s). Les contrôles de sélection, frais et limites de population restent inchangés. Le minuteur est reconstruit depuis le dernier cycle sauvegardé et les symptômes depuis les checkpoints.
+
+ATLAS et CURIE reçoivent le symptôme chiffré. Les parents affectés peuvent produire de nouveaux challengers sans réactiver un compte retiré. FORGE observe ces descendants sur les données suivantes ; JUDGE les réévalue au cycle suivant, et les résultats alimentent la mémoire. Factory indique le problème et le déclenchement anticipé. Cela automatise la recherche de mutations bornées ; cela ne réécrit pas encore librement le code et ne prouve pas qu’une mutation a causé une amélioration.
+
+Les agents nécessitent un fournisseur LLM configuré. `enabled=true` signifie autorisé, `available=true` signifie configuration présente ; seul un appel réussi vérifie la connexion. Sans clé, le repli déterministe demeure explicite. Le connecteur OpenBot optionnel utilise également un fournisseur de modèles ; son installation seule ne donne pas accès à OpenAI.

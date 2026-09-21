@@ -291,3 +291,78 @@ def test_trade_journal_net_fees_and_idempotent_persistence(tmp_path):
     reopened = DarwinStore(tmp_path/'trades.sqlite')
     assert reopened.recent_trades() == [trade]
     reopened.close()
+
+def test_autonomous_incident_requires_observed_evidence():
+    from darwin.autonomy import diagnose
+    row = dict(strategy_id='loss', sample_seconds=1800, closed_trades=20, pnl=-20, fees=30, return_bps=-200)
+    assert diagnose([row], min_seconds=1800, min_trades=20)['code'] == 'FEE_DRAG'
+    assert not diagnose([{**row, 'sample_seconds': 1799}], min_seconds=1800, min_trades=20)['actionable']
+    assert not diagnose([{**row, 'pnl': 2, 'return_bps': 20}], min_seconds=1800, min_trades=20)['actionable']
+    assert not diagnose([{**row, 'pnl': float('nan')}], min_seconds=1800, min_trades=20)['actionable']
+
+
+def test_autonomous_repair_advances_cycle_and_survives_restart(tmp_path, monkeypatch):
+    import time
+    from darwin.supervisor import DarwinSupervisor
+    monkeypatch.setenv('DARWIN_LLM_ENABLED', 'false')
+    supervisor = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    account = next(iter(supervisor.population.accounts.values()))
+    account.started_at = time.time() - 4000
+    account.last_ts = time.time()
+    account.cash = -20
+    account.fees = 30
+    account.closed_trades = 20
+    supervisor.last_epoch = time.time() - 4000
+    from darwin.autonomy import diagnose
+    supervisor._repair_diagnosis = diagnose(supervisor.population.metrics(), min_seconds=1800, min_trades=20)
+    assert supervisor.due()
+    assert supervisor.cycle_state()['trigger'] == 'AUTO_REPAIR'
+    supervisor._retry_epoch_at = time.time() + 60
+    assert not supervisor.due()
+    supervisor.auto_epoch_enabled = False
+    supervisor._retry_epoch_at = 0
+    assert not supervisor.due()
+    supervisor.checkpoint()
+    supervisor.store.close()
+    restarted = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    try:
+        # A fresh process reconstructs incidents from measured account checkpoints.
+        issue = diagnose(restarted.population.metrics(), min_seconds=1800, min_trades=20)
+        assert issue['code'] == 'FEE_DRAG'
+        assert issue['mean_fees_usd'] == 30
+    finally:
+        restarted.store.close()
+
+def test_incident_runs_brains_creates_challengers_and_records_reason(tmp_path, monkeypatch):
+    import time
+    from darwin.supervisor import DarwinSupervisor
+    from darwin.autonomy import diagnose
+    monkeypatch.setenv('DARWIN_LLM_ENABLED', 'false')
+    supervisor = DarwinSupervisor('BTCUSDT', 'simulation', tmp_path)
+    try:
+        for account in supervisor.population.accounts.values():
+            account.started_at = time.time() - 4000
+            account.last_ts = time.time()
+            account.cash = -20
+            account.fees = 30
+            account.closed_trades = 25
+            account.turnover = 80000
+        supervisor._repair_diagnosis = diagnose(supervisor.population.metrics(), min_seconds=1800, min_trades=20)
+        supervisor.last_epoch = time.time() - 4000
+        captured = []
+        original = supervisor.brains.curie_plan
+        def capture(row, lessons, fallback):
+            captured.append(row['measured_incident']['code'])
+            return original(row, lessons, fallback)
+        monkeypatch.setattr(supervisor.brains, 'curie_plan', capture)
+        result = supervisor.run_epoch()
+        assert result['ran'] and result['created'] > 0
+        assert captured and set(captured) == {'FEE_DRAG'}
+        epoch = supervisor.store.recent_epochs(1)[0]
+        assert epoch['config']['research_trigger'] == 'AUTO_REPAIR'
+        assert epoch['config']['measured_incident']['mean_fees_usd'] == 30
+        assert supervisor.store.recent_experiments(1)[0]['status'] == 'RUNNING'
+        assert not supervisor.due()
+        assert not supervisor._repair_diagnosis
+    finally:
+        supervisor.store.close()

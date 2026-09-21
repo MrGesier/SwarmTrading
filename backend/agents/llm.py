@@ -137,6 +137,7 @@ class AgentBrain:
         return {
             "enabled": self.enabled if self.runtime != "deterministic" else True,
             "available": self.available,
+            "unavailable_reason": None if self.available else "DISABLED" if not self.enabled else "MISSING_API_KEY",
             "runtime": self.runtime,
             "provider": self.provider,
             "model": self.model,

@@ -13,6 +13,7 @@ from typing import Any
 from agents import DarwinBrains
 from agents.codex_engineer import CodexEngineer
 from engine import GENOMES
+from .autonomy import diagnose
 from .judge import JudgeConfig, judge
 from .genome import MUTABLE_GENES, gene_catalog, upgrade_genome
 from .memory import write_epoch_memory
@@ -58,6 +59,10 @@ class DarwinSupervisor:
         self.auto_epoch_enabled = os.getenv("DARWIN_AUTO_EPOCH_ENABLED", "true").lower() in {"1", "true", "yes"}
         recent = self.store.recent_epochs(1)
         self.last_epoch = float(recent[0]["ts"]) if recent else self.store.initial_epoch_time()
+        self.repair_enabled = os.getenv("DARWIN_AUTO_REPAIR_ENABLED", "true").lower() in {"1", "true", "yes"}
+        self.repair_interval = max(1800.0, float(os.getenv("DARWIN_REPAIR_INTERVAL_SECONDS", "3600")))
+        self._repair_diagnosis = {}
+        self._diagnosed_at = 0.0
         self._retry_epoch_at = 0.0
         self._last_state: dict[str, Any] | None = None
         self.scientist = ScientistAgent()  # deterministic fallback / validator
@@ -77,6 +82,10 @@ class DarwinSupervisor:
         self.population.observe(state)
         self.baseline.observe(state)
         now = time.time()
+        if now - self._diagnosed_at >= 60:
+            self._repair_diagnosis = diagnose(self.population.metrics(),
+                min_seconds=max(1800, self.cfg.min_sample_seconds), min_trades=max(20, self.cfg.min_closed_trades))
+            self._diagnosed_at = now
         if now - self._last_pnl_record >= 60:
             self.store.record_pnl(self.pnl_state())
             self._last_pnl_record = now
@@ -144,10 +153,13 @@ class DarwinSupervisor:
     def cycle_state(self, rows=None) -> dict[str, Any]:
         rows = self.population.metrics() if rows is None else rows
         eligible = sum(r["sample_seconds"] >= self.cfg.min_sample_seconds and r["closed_trades"] >= self.cfg.min_closed_trades for r in rows)
-        remaining = max(0.0, self.last_epoch + self.epoch_seconds - time.time())
+        deadline = self.next_research_at()
+        remaining = max(0.0, deadline - time.time())
         status = "DISABLED" if not self.auto_epoch_enabled else "COLLECTING" if remaining else "READY" if eligible else "WAITING_EVIDENCE"
         recent = self.store.recent_epochs(1)
-        return {"status": status, "next_at": self.last_epoch + self.epoch_seconds,
+        return {"status": status, "next_at": deadline,
+                "trigger": "AUTO_REPAIR" if self.repair_actionable() else "SCHEDULED",
+                "diagnosis": self._repair_diagnosis,
                 "seconds_remaining": remaining, "eligible": eligible, "population": len(rows),
                 "min_sample_seconds": self.cfg.min_sample_seconds, "min_closed_trades": self.cfg.min_closed_trades,
                 "last_epoch": recent[0] if recent else None,
@@ -177,8 +189,15 @@ class DarwinSupervisor:
                 "uncertainty": "Not estimated. Correlated strategies and adaptive selection; future-window descriptive evidence, not independent proof.",
                 "reason": "Full frozen G0 versus every descendant evaluated before this epoch's selection." if matched else "Waiting for descendants and a complete common observation window; historical results are not reconstructed."}
 
+    def repair_actionable(self) -> bool:
+        return self.repair_enabled and bool(self._repair_diagnosis.get("actionable"))
+
+    def next_research_at(self) -> float:
+        interval = min(self.epoch_seconds, self.repair_interval) if self.repair_actionable() else self.epoch_seconds
+        return self.last_epoch + interval
+
     def due(self) -> bool:
-        return self.auto_epoch_enabled and time.time() >= self._retry_epoch_at and time.time() - self.last_epoch >= self.epoch_seconds
+        return self.auto_epoch_enabled and time.time() >= max(self._retry_epoch_at, self.next_research_at())
 
     def _remember_agent(self, agent_id: str, result: Any) -> None:
         try:
@@ -193,7 +212,7 @@ class DarwinSupervisor:
         fallback_plan = self.scientist.plan(parent_row, recent_lessons)
         fallback = fallback_plan.to_dict()
         self._emit("agent_started", {"task": "design controlled experiment"}, agent_id="curie", strategy_id=parent_row.get("strategy_id"))
-        result = self.brains.curie_plan(parent_row, recent_lessons, fallback)
+        result = self.brains.curie_plan({**parent_row, "measured_incident": self._repair_diagnosis}, recent_lessons, fallback)
         self._remember_agent("curie", result)
         data = result.data if isinstance(result.data, dict) else fallback
         try:
@@ -237,8 +256,11 @@ class DarwinSupervisor:
 
     def run_epoch(self, *, force: bool = False) -> dict[str, Any]:
         if not force and not self.due():
-            return {"ran": False, "seconds_until_next": max(0.0, self.epoch_seconds - (time.time() - self.last_epoch))}
+            return {"ran": False, "seconds_until_next": max(0.0, self.next_research_at() - time.time())}
 
+        trigger = "AUTO_REPAIR" if self.repair_actionable() else "MANUAL" if force else "SCHEDULED"
+        if trigger == "AUTO_REPAIR":
+            self._emit("research_incident", self._repair_diagnosis, agent_id="atlas")
         self._emit("epoch_started", {"force": force, "population": len(self.population.accounts)}, agent_id="atlas")
         preliminary = self.population.metrics(include_killed=False)
         prelim_eligible = [
@@ -303,6 +325,15 @@ class DarwinSupervisor:
             key=lambda r: r["fitness"],
             reverse=True,
         )[:6]
+        # Repair losing, evidence-rich parents as fresh challengers; do not revive
+        # a killed account or let an LLM override its numerical verdict.
+        if trigger == "AUTO_REPAIR":
+            affected = set(self._repair_diagnosis.get("affected_ids", []))
+            repair_rows = sorted((r for r in evaluations if r["strategy_id"] in affected and r.get("eligible")),
+                                 key=lambda r: r["pnl"])
+            ranked = list({r["strategy_id"]: r for r in repair_rows[:3] + ranked}.values())[:6]
+        for candidate in ranked:
+            candidate["measured_incident"] = self._repair_diagnosis
         def diverse(ids: list[str]) -> list[str]:
             result: list[str] = []
             seen_cells: set[tuple[str, int]] = set()
@@ -384,6 +415,8 @@ class DarwinSupervisor:
             "max_active_strategies": self.max_active_strategies,
             "max_new_per_epoch": self.max_new_per_epoch,
             "auto_epoch_enabled": self.auto_epoch_enabled,
+            "research_trigger": trigger,
+            "measured_incident": self._repair_diagnosis,
             "benchmark": benchmark,
             "fixed_baseline": comparison,
             "genome_version": 2,
@@ -427,6 +460,8 @@ class DarwinSupervisor:
             if not any(t.get("status") == "PREPARED" for t in pending):
                 self.prepare_engineer_task("Investigate research stagnation: compare fees, mutation coverage and next-window evidence. Propose isolated, tested code changes; never modify execution permissions.")
         self.persist_trades()
+        self._repair_diagnosis = {}
+        self._diagnosed_at = 0.0
         self.population.reset_epoch()
         self.baseline.reset_epoch()
         self.checkpoint()

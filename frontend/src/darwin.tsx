@@ -96,6 +96,7 @@ type DarwinState = {
   leaderboard: Leader[];
   recent_trades?: Array<{strategy_id:string;opened_at:number|null;closed_at:number;direction:string;entry_mid:number|null;exit_mid:number;net_pnl_usd:number;fees_usd:number|null;reason:string}>;
   auto_epoch_enabled?: boolean;
+  cycle?: {seconds_remaining: number; trigger: string};
   epoch_seconds: number;
   seconds_since_epoch: number;
   lessons: Lesson[];
@@ -259,7 +260,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
         <div><small>STRATÉGIES PAPER</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER ?? 0} challengers · {state.historical_population} ever created</span></div>
         <div><small>CHAMPION</small><b className="positive">{state.champion?.id ?? "No promotion yet"}</b><span>{championMetric ? `${signed(championMetric.return_bps, 1)} bp · evidence ${pct(championMetric.evidence_weight)}` : "Waiting for sufficient evidence"}</span></div>
         <div><small>CAPITAL SIMULÉ / STRATÉGIE</small><b>${fmt(state.paper.notional_usd, 0)}</b><span>{fmt(state.paper.fee_bps, 1)} bp / fill</span></div>
-        <div><small>PROCHAINE SÉLECTION</small><b>{duration(Math.max(0, state.epoch_seconds - state.seconds_since_epoch))}</b><span>default cycle {duration(state.epoch_seconds)}</span></div>
+        <div><small>PROCHAINE SÉLECTION</small><b>{duration(state.cycle?.seconds_remaining ?? Math.max(0, state.epoch_seconds - state.seconds_since_epoch))}</b><span>{state.cycle?.trigger==="AUTO_REPAIR"?"Cycle anticipé : problème détecté":`Cycle normal ${duration(state.epoch_seconds)}`}</span></div>
       </div>
 
       <details className="advanced-panel"><summary>Diagnostics de sélection et budget IA</summary><section className="research-cockpit">

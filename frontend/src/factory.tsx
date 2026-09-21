@@ -156,11 +156,12 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <details className="pnl-method"><summary>Comprendre ces chiffres et les frais</summary><p>Chaque stratégie possède un compte paper indépendant : leur moyenne n’est pas un portefeuille. Historique par minute. Spread, profondeur visible et frais modélisés ; funding et impact réel non modélisés. Aucune aptitude au live démontrée.</p></details>
     </section>
     <section className="factory-strip" aria-label="Research cycle">
-      <div><small>CYCLE AUTOMATIQUE</small><b>{state.cycle?.status??"WAITING"}</b><span>{Math.ceil((state.cycle?.seconds_remaining??0)/60)} min avant la sélection automatique</span></div>
+      <div><small>{state.cycle?.trigger==="AUTO_REPAIR"?"CORRECTION AUTOMATIQUE":"CYCLE AUTOMATIQUE"}</small><b>{state.cycle?.status??"WAITING"}</b><span>{Math.ceil((state.cycle?.seconds_remaining??0)/60)} min avant la sélection automatique</span></div>
       <div><small>EVIDENCE READY</small><b>{state.cycle?.eligible??0} / {state.cycle?.population??0}</b><span>Requires {state.cycle?.min_sample_seconds??"—"} seconds and {state.cycle?.min_closed_trades??"—"} closed trades per strategy</span></div>
       <div><small>RECURSIVE LOOP</small><b>G0 → G{state.cycle?.max_generation??0}</b><span>Measure → select → mutate one gene → test next window → repeat</span></div>
       <div><small>DERNIER CYCLE TERMINÉ</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
     </section>
+    {state.cycle?.diagnosis?.actionable && <div className="darwin-message"><b>Problème détecté : {state.cycle.diagnosis.code==="FEE_DRAG"?"poids excessif des frais":"pertes généralisées"}</b><p>{state.cycle.diagnosis.fee_affected} stratégies affectées par les frais sur {state.cycle.diagnosis.eligible} évaluables. Un cycle anticipé sollicitera les agents, puis testera de nouveaux descendants. Une hypothèse n’est pas une correction validée.</p></div>}
     <section className="factory-shell">
       <aside className="factory-side left">
         <div className="factory-panel-title"><BrainCircuit size={16}/> Factory pulse</div>

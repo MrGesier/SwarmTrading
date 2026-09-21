@@ -89,7 +89,7 @@ class DarwinBrains:
             "required": ["selected_strategy_ids", "focus", "reason"],
         }
         return self.atlas.ask_json(
-            task="Choose up to three parent strategy IDs worth spending the next experiment budget on. Prefer distinct family/horizon cells and reproducible evidence.",
+            task="Choose up to three parent strategy IDs worth spending the next experiment budget on. Prefer distinct family/horizon cells and reproducible evidence. If a measured_incident is present, prioritize a falsifiable repair experiment on affected strategies; do not describe a hypothesis as a proven fix.",
             context={"candidates": candidates[:6], "recent_lessons": lessons[:12]},
             schema_name="atlas_parent_selection",
             schema=schema,
