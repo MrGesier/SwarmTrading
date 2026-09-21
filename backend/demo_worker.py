@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -145,7 +146,8 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
             update(codex=outcome)
             if outcome['exit_code'] or not response_path.exists():
                 quota=any(x in outcome['output'].lower() for x in ('usage limit','quota','rate limit'))
-                raise ConnectionError('Codex quota atteint' if quota else 'Codex invocation failed; inspect local CLI evidence')
+                denied='Access is denied' in outcome['output']
+                raise ConnectionError('Codex quota atteint' if quota else 'Accès Windows refusé au CLI Codex. Lancer Demarrer-Darwin-Demo.cmd depuis la session Windows habituelle, puis choisir Codex CLI.' if denied else 'Codex invocation failed; inspect local CLI evidence')
             proposal=json.loads(response_path.read_text(encoding='utf-8'))
             update('LLM_CONNECTED',real_call=True)
             update('PROPOSED',real_call=True)
@@ -165,7 +167,8 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
         if regression:
             if not regression(work):raise ValueError('Regression failed')
         else:
-            if not check('backend regression',[sys.executable,'-m','pytest','backend','-q','-p','no:cacheprovider','--basetemp',str(artifacts/'pytest')],work,240):raise ValueError('Backend regression failed')
+            validation_dir=Path(tempfile.mkdtemp(prefix='dv3-',dir=root.parent))
+            if not check('backend regression',[sys.executable,'-m','pytest','backend','-q','-p','no:cacheprovider','--basetemp',str(validation_dir)],work,240):raise ValueError('Backend regression failed')
             modules=root/'frontend/node_modules'
             if not modules.exists():raise ValueError('Run frontend npm ci before the demo')
             shutil.copytree(modules,work/'frontend/node_modules')
@@ -177,6 +180,7 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
         git(['add',TARGET],work)
         git(['-c','user.name=Darwin Demo','-c','user.email=demo@localhost','commit','-m','Candidate: correct display validation label (human review required)'],work)
         candidate=git(['rev-parse','HEAD'],work)
+        if git(['rev-parse','HEAD'],root)!=pristine:raise ValueError('Source branch changed during validation; candidate not integrated')
         update('READY_FOR_REVIEW',candidate_sha=candidate,reason='Independent checks passed. No integration, push or deployment performed.')
     except Exception as exc:
         update('PROVIDER_UNAVAILABLE' if isinstance(exc,ConnectionError) else 'REJECTED',reason=redacted(str(exc))[:1000])

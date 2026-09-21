@@ -5,6 +5,7 @@ export function Autocorrection(){
   const [csrf,setCsrf]=useState(''),[state,setState]=useState<any>(null),[error,setError]=useState('');
   const [busy,setBusy]=useState(false),[ping,setPing]=useState<any>(null),[models,setModels]=useState<any[]>([]);
   const [provider,setProvider]=useState('codex-cli');
+  const [selected,setSelected]=useState('');
   useEffect(()=>{
     let gone=false;
     const load=async()=>{try{
@@ -26,7 +27,7 @@ export function Autocorrection(){
       else setState((old:any)=>({...old,jobs:[data,...(old?.jobs??[]).filter((x:any)=>x.id!==data.id)]}));
     }catch(e){setError(String(e))}finally{setBusy(false)}
   };
-  const job=state?.jobs?.[0];
+  const job=state?.jobs?.find((x:any)=>x.id===selected)??state?.jobs?.[0];
   const active=job&&['DETECTED','QUEUED','LLM_CONNECTED','PROPOSED','PATCHING','TESTING'].includes(job.state);
   return <section className="autocorrection-panel" aria-label="Autocorrection du code">
     <header><div><small>EXPÉRIENCE LOCALE · CODE UNIQUEMENT</small><h3>Autocorrection / Code Engineer</h3><p>Défaut contrôlé → proposition de code → tests indépendants → revue humaine.</p></div><span className={state?.worker_online?'positive':'negative'}>{state?.worker_online?'Worker local connecté':'Worker arrêté'}</span></header>
@@ -44,6 +45,7 @@ export function Autocorrection(){
       {ping&&<pre>{JSON.stringify(ping,null,2)}</pre>}
     </details>
     {error&&<p role="alert">{error}</p>}
+    {state?.jobs?.length>1&&<label>Expérience <select aria-label="Expérience à examiner" value={job?.id??''} onChange={e=>setSelected(e.target.value)}>{state.jobs.map((j:any)=><option key={j.id} value={j.id}>{new Date(j.created_at*1000).toLocaleTimeString()} · {j.provider} · {j.state}</option>)}</select></label>}
     {job&&<article>
       <div className="autocorrection-status"><b>{job.state}</b><span>{job.provider} · {job.model??'modèle en attente'} · {job.real_call?'réponse LLM réelle vérifiée':'aucune réponse LLM réelle vérifiée'}</span></div>
       <p>{job.evidence}</p><p>{job.hypothesis??job.reason}</p>
