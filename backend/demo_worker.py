@@ -68,6 +68,7 @@ def clean_env(codex=False):
     allowed=('PATH','SystemRoot','WINDIR','COMSPEC','PATHEXT','TEMP','TMP','LOCALAPPDATA')
     env={k:v for k,v in os.environ.items() if k.upper() in {x.upper() for x in allowed}}
     env.update(PYTHONUTF8='1',PYTHONDONTWRITEBYTECODE='1',HYPERLIQUID_ENABLED='false',DARWIN_LLM_ENABLED='false',DARWIN_RESEARCH_PROVIDER='deterministic',GIT_TERMINAL_PROMPT='0',GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull)
+    env['USERPROFILE']=str(Path(os.environ.get('CODEX_HOME',str(Path.home()/'.codex'))).parent)
     if codex:
         home=os.getenv('CODEX_HOME') or str(Path(os.environ.get('USERPROFILE',str(Path.home()))) / '.codex')
         env['CODEX_HOME']=home # reuse auth in place; never copy it to a worktree
