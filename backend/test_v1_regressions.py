@@ -78,6 +78,7 @@ def test_budget_is_persistent_and_fails_closed(tmp_path):
 
 
 def test_bad_provider_schema_falls_back_without_secret_error(monkeypatch):
+    monkeypatch.setenv("DARWIN_BRAIN_CURIE", "openai")
     from agents.llm import AgentBrain
     monkeypatch.setenv('OPENAI_API_KEY', 'test-only-placeholder')
     monkeypatch.setenv('DARWIN_LLM_ENABLED', 'true')

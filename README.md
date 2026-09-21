@@ -312,3 +312,8 @@ JUDGE et les mutations fonctionnent automatiquement lorsque les conditions du cy
 ATLAS et CURIE reçoivent le symptôme chiffré. Les parents affectés peuvent produire de nouveaux challengers sans réactiver un compte retiré. FORGE observe ces descendants sur les données suivantes ; JUDGE les réévalue au cycle suivant, et les résultats alimentent la mémoire. Factory indique le problème et le déclenchement anticipé. Cela automatise la recherche de mutations bornées ; cela ne réécrit pas encore librement le code et ne prouve pas qu’une mutation a causé une amélioration.
 
 Les agents nécessitent un fournisseur LLM configuré. `enabled=true` signifie autorisé, `available=true` signifie configuration présente ; seul un appel réussi vérifie la connexion. Sans clé, le repli déterministe demeure explicite. Le connecteur OpenBot optionnel utilise également un fournisseur de modèles ; son installation seule ne donne pas accès à OpenAI.
+
+
+### Démonstration locale de correction de code V3
+
+Voir [DARWIN_DEMO_V3.md](DARWIN_DEMO_V3.md). `Demarrer-Darwin-Demo.cmd` lance la Factory et son worker séparé. La démo produit un vrai diff via Codex CLI (ou un mock explicitement étiqueté), exécute des tests indépendants et laisse la proposition en attente de revue. `Verifier-Darwin-Demo.cmd` expose l’état local. OpenRouter gratuit est préparé avec quota partagé ; aucune intégration de code ou activation du trading réel n’est automatique.

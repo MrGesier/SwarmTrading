@@ -282,6 +282,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
         </div>)}</div>
       </section> : null}</details>
 
+      <details className="advanced-panel"><summary>Quels indicateurs font réellement évoluer les stratégies ?</summary><p>Book pressure utilise l’imbalance pondérée du carnet. Order flow utilise le flux exécuté. Microprice utilise son écart au mid et le spread. Les autres familles exploitent les rendements et la volatilité ; Breakout ajoute le flux.</p><p>Les mutations ajustent huit paramètres d’entrée et de sortie. Les familles et leurs combinaisons de signaux restent prédéfinies : tous les indicateurs visibles dans Marché, notamment le VWAP et les diagnostics graphiques, ne sont pas automatiquement utilisés par Darwin. Le panneau Autocorrection teste la qualité du code, sans constituer une preuve de rentabilité.</p></details>
       <section className="darwin-card trade-journal">
         <div className="darwin-card-head"><span>Derniers trades paper clôturés</span><small>{state.symbol} · {state.mode} · toutes les stratégies</small></div>
         <p>Journal enregistré depuis cette mise à jour, conservé entre les cycles. Les anciennes opérations individuelles ne peuvent pas être reconstituées. Prix affichés : milieu du carnet, pas prix d'exécution.</p>

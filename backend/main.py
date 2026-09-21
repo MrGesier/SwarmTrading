@@ -296,6 +296,19 @@ async def lifespan(app):
 hyperliquid_executor = HyperliquidExecutor()
 
 app = FastAPI(title='SwarmTrade V0.11 OpenAI Brain + OpenBot Bridge', lifespan=lifespan)
+from demo_api import create_demo_router
+def select_research_provider(provider):
+    os.environ['DARWIN_RESEARCH_PROVIDER']=provider
+    cognitive=('atlas','curie','evolve','judge','mnemosyne')
+    for session in list(sessions.values()):
+        for identity in cognitive:
+            brain=session.darwin.brains._by_id[identity]
+            brain.runtime=provider
+            brain.provider_trace=None
+            brain.last_result=None
+            if provider=='openrouter-free':brain.model=os.getenv('OPENROUTER_FREE_MODEL','unselected :free model')
+    return provider
+app.include_router(create_demo_router(PROJECT_ROOT, get_session, select_research_provider))
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=3)
 ALLOWED_ORIGINS = [x.strip() for x in os.getenv('DARWIN_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=['GET','POST'], allow_headers=['*'])

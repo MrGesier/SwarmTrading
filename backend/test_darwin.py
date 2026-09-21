@@ -104,6 +104,7 @@ def test_agent_registry_has_unique_human_colors_and_execution_boundary():
 
 
 def test_brain_policy_separates_reasoning_from_deterministic_authority(monkeypatch):
+    monkeypatch.setenv("DARWIN_RESEARCH_PROVIDER", "openai")
     from agents import AGENT_SPECS, DarwinBrains
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -123,6 +124,7 @@ def test_brain_policy_separates_reasoning_from_deterministic_authority(monkeypat
 
 
 def test_openai_fallback_is_structured_and_cerberus_fails_closed(monkeypatch):
+    monkeypatch.setenv("DARWIN_RESEARCH_PROVIDER", "openai")
     from agents import DarwinBrains
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

@@ -1,3 +1,4 @@
+import {Autocorrection} from "./autocorrection";
 import React, { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Crown, FastForward, FlaskConical, Pause, Play, RotateCcw, Shield, Sparkles, Wrench, X } from "lucide-react";
 import { API, wsUrl } from "./api";
@@ -162,6 +163,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <div><small>DERNIER CYCLE TERMINÉ</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
     </section>
     {state.cycle?.diagnosis?.actionable && <div className="darwin-message"><b>Problème détecté : {state.cycle.diagnosis.code==="FEE_DRAG"?"poids excessif des frais":"pertes généralisées"}</b><p>{state.cycle.diagnosis.fee_affected} stratégies affectées par les frais sur {state.cycle.diagnosis.eligible} évaluables. Un cycle anticipé sollicitera les agents, puis testera de nouveaux descendants. Une hypothèse n’est pas une correction validée.</p></div>}
+    <Autocorrection/>
     <section className="factory-shell">
       <aside className="factory-side left">
         <div className="factory-panel-title"><BrainCircuit size={16}/> Factory pulse</div>
@@ -177,7 +179,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <main className="factory-floor">
         <div className="factory-smoke smoke-a"/><div className="factory-smoke smoke-b"/>
         <EventCourier event={liveEvent}/><JudgeStamp event={liveEvent}/><CrownBurst event={liveEvent}/>
-        <div className="engineer-loft"><div className="engineer-avatar">🦝<span>🧑‍💻</span></div><div><small>ABOVE THE FACTORY · CODE ONLY</small><b>CODEX ENGINEER</b><p>{"Les tâches sont préparées automatiquement en cas de stagnation. Leur exécution et l’adoption du code ne sont pas encore connectées."}</p></div><div className="engineer-meta"><span>{state.engineer?.engineer?.model??"gpt-6-astra"}</span><span>{"EXÉCUTION NON CONNECTÉE"}</span><button onClick={()=>void prepareEngineerTask()} disabled={engineerBusy}><Wrench size={13}/>{engineerBusy?"Préparation…":"Ajouter une tâche (facultatif)"}</button></div></div>
+        <div className="engineer-loft"><div className="engineer-avatar">🦝<span>🧑‍💻</span></div><div><small>ABOVE THE FACTORY · CODE ONLY</small><b>CODEX ENGINEER</b><p>{"Les tâches sont préparées en cas de stagnation. Le panneau Autocorrection exécute une démo isolée via le worker local ; chaque patch reste soumis à revue."}</p></div><div className="engineer-meta"><span>{state.engineer?.engineer?.model??"gpt-6-astra"}</span><span>{"INTÉGRATION SOUMISE À REVUE"}</span><button onClick={()=>void prepareEngineerTask()} disabled={engineerBusy}><Wrench size={13}/>{engineerBusy?"Préparation…":"Ajouter une tâche (facultatif)"}</button></div></div>
         <div className="factory-row top">
           <Character agent={A("atlas")} selected={selectedAgent==="atlas"} active={activeAgent==="atlas"} dimmed={isDim("atlas")} onClick={()=>setSelectedAgent(selectedAgent==="atlas"?null:"atlas")}/>
           <Conveyor label="attention / budget" hot={activeAgent==="atlas"||activeAgent==="curie"}/>

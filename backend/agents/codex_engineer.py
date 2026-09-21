@@ -7,6 +7,7 @@ receives exchange credentials and cannot change capital/risk state.
 from __future__ import annotations
 
 import os
+import shutil
 import time
 from typing import Any
 
@@ -15,8 +16,8 @@ class CodexEngineer:
     def __init__(self):
         self.enabled = os.getenv("CODEX_ENGINEER_ENABLED", "false").lower() in {"1", "true", "yes"}
         self.model = os.getenv("CODEX_ENGINEER_MODEL", "gpt-6-astra")
-        self.runtime = "openai-agents-api"
-        self.environment = os.getenv("CODEX_ENGINEER_ENVIRONMENT", "openai_hosted")
+        self.runtime = "codex-cli"
+        self.environment = os.getenv("CODEX_ENGINEER_ENVIRONMENT", "local")
         self.api_key_present = bool(os.getenv("OPENAI_API_KEY", "").strip())
         self.auto_apply = False  # hard invariant in V0.11
 
@@ -28,11 +29,12 @@ class CodexEngineer:
             "model": self.model,
             "environment": self.environment,
             "enabled": self.enabled,
-            "available": bool(self.enabled and self.api_key_present),
+            "available": bool(os.getenv("DARWIN_CODEX_BIN") or shutil.which("codex")),
+            "authentication": "verified by local demo worker at invocation",
             "auto_apply": self.auto_apply,
             "authority": "CODE_ONLY_NO_CAPITAL",
             "capital_permission": "NONE",
-            "detail": "Prepares and reviews code changes outside the live trading loop; explicit human/Codex workflow required to apply changes.",
+            "detail": "Task packs feed the isolated local demo worker. Codex login is checked at invocation; all successful patches await human review.",
         }
 
     def task_pack(self, supervisor: Any, *, objective: str | None = None) -> dict[str, Any]:
