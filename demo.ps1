@@ -11,6 +11,8 @@ if(-not (Get-Command node -ErrorAction SilentlyContinue)){
   $bundledNode=Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin'
   if(Test-Path (Join-Path $bundledNode 'node.exe')){$env:PATH=$bundledNode+';'+$env:PATH}
 }
+$nodeCommand=Get-Command node -ErrorAction SilentlyContinue
+if($nodeCommand){$env:DARWIN_NODE_BIN=$nodeCommand.Source}
 if($Check){
   if($codexCommand){& $codexCommand.Source login status}else{Write-Host 'Codex CLI absent. Installer le CLI officiel puis lancer codex login.'}
   $webSession=New-Object Microsoft.PowerShell.Commands.WebRequestSession

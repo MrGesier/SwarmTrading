@@ -172,7 +172,7 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
             modules=root/'frontend/node_modules'
             if not modules.exists():raise ValueError('Run frontend npm ci before the demo')
             shutil.copytree(modules,work/'frontend/node_modules')
-            node=shutil.which('node')
+            node=os.getenv('DARWIN_NODE_BIN') or shutil.which('node')
             if not node:raise ValueError('Node unavailable to local worker')
             if not check('frontend TypeScript',[node,'node_modules/typescript/bin/tsc'],work/'frontend'):raise ValueError('TypeScript failed')
             if not check('frontend build',[node,'node_modules/vite/bin/vite.js','build','--configLoader','runner'],work/'frontend'):raise ValueError('Frontend build failed')
