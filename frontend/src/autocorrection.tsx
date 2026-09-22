@@ -28,9 +28,14 @@ export function Autocorrection(){
     }catch(e){setError(String(e))}finally{setBusy(false)}
   };
   const job=state?.jobs?.find((x:any)=>x.id===selected)??state?.jobs?.[0];
-  const active=job&&['DETECTED','QUEUED','LLM_CONNECTED','PROPOSED','PATCHING','TESTING'].includes(job.state);
+  const active=state?.jobs?.some((j:any)=>['DETECTED','QUEUED','LLM_CONNECTED','PROPOSED','PATCHING','TESTING'].includes(j.state));
   return <section className="autocorrection-panel" aria-label="Autocorrection du code">
     <header><div><small>EXPÉRIENCE LOCALE · CODE UNIQUEMENT</small><h3>Autocorrection / Code Engineer</h3><p>Défaut contrôlé → proposition de code → tests indépendants → revue humaine.</p></div><span className={state?.worker_online?'positive':'negative'}>{state?.worker_online?'Worker local connecté':'Worker arrêté'}</span></header>
+    <details open><summary>Ce qui évolue automatiquement aujourd’hui</summary>
+      <p><b>Stratégies paper :</b> observations → diagnostic → mutations bornées → comparaison par JUDGE → conservation ou rejet → prochain cycle. Cette boucle ajuste huit paramètres dans des familles prédéfinies. Sans fournisseur connecté, les propositions viennent du moteur déterministe.</p>
+      <p><b>Code :</b> la démonstration ci-dessous corrige un défaut de présentation injecté dans une copie isolée. Elle ne réécrit pas encore les stratégies à partir de leurs pertes. Une correction validée par les tests reste une proposition à examiner.</p>
+      <p><b>Preuve d’amélioration :</b> comparer parents et descendants sur une même fenêtre, après frais, avec assez de trades. Un candidat créé ou des tests réussis ne prouvent pas un meilleur PnL.</p>
+    </details>
     <div className="autocorrection-controls">
       <label>Ingénieur <select aria-label="Fournisseur de la démonstration" value={provider} onChange={e=>setProvider(e.target.value)}><option value="codex-cli">Codex CLI · abonnement ChatGPT</option><option value="mock">Mock · aucun LLM</option></select></label>
       <button disabled={busy||active||!csrf||!state?.worker_online} onClick={()=>void send('demo',{provider})}>Démonstration contrôlée</button>

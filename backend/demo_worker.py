@@ -75,6 +75,20 @@ def clean_env(codex=False):
     return env
 
 
+def resolve_codex():
+    """Find the official desktop CLI even when a GUI worker has a different PATH."""
+    explicit=os.getenv('DARWIN_CODEX_BIN')
+    if explicit:
+        return explicit if Path(explicit).is_file() else None
+    found=shutil.which('codex')
+    if found:return found
+    local=os.getenv('LOCALAPPDATA')
+    if local:
+        candidates=list((Path(local)/'OpenAI/Codex/bin').glob('*/codex.exe'))
+        if candidates:return str(max(candidates,key=lambda p:p.stat().st_mtime))
+    return None
+
+
 def run(command,cwd,timeout=180,input_text=None,codex=False):
     start=time.time()
     try:
@@ -128,8 +142,8 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
             proposal={'path':TARGET,'hypothesis':'Mock fixture restores the no-checks branch; no model was contacted.','code':original}
             update('PROPOSED',real_call=False,model='fixture')
         else:
-            cli=os.getenv('DARWIN_CODEX_BIN') or shutil.which('codex')
-            if not cli:raise ConnectionError('Codex CLI missing; run codex login in your Windows terminal')
+            cli=resolve_codex()
+            if not cli:raise ConnectionError('CLI Codex introuvable. Relancer Demarrer-Darwin-Demo.cmd après installation ou mise à jour de Codex.')
             auth=run([cli,'login','status'],root,30,codex=True)
             if auth['exit_code'] or 'ChatGPT' not in auth['output']:
                 raise ConnectionError('Codex ChatGPT login unavailable; run codex login in your Windows terminal')

@@ -50,3 +50,15 @@ Source : `backend/darwin/signals.py`, cohérente avec `backend/engine.py::votes`
 - [Catalogue dynamique des modèles](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties)
 
 La demande initiale `/docs/auth` n’a pas pu être chargée ; le comportement d’authentification est fondé sur la documentation non interactive et le résultat local de `codex login status`. Le trading réel demeure désactivé ; aucun déploiement Railway ni installation Ollama.
+
+
+## État vérifié le 22 septembre 2026
+
+- Pipeline mock complet `094c60c22fef45f380a41ab8f65eca5e` : READY_FOR_REVIEW. Défaut reproduit, contrat indépendant corrigé, 79 tests backend de cette révision, TypeScript et Vite réussis. Le rapport et le diff sont dans `data/autocorrection/<id>/`. Ce résultat ne provient pas d’un LLM.
+- Révision suivante : 80 tests backend réussis, `npm ci` et `npm run build` réussis. Analyse syntaxique PowerShell du lanceur réussie. Endpoints health/brains/research/factory/engineer répondent 200, `paper_only=true`.
+- OpenRouter sélectionné dans l’application, clé absente, zéro inférence réelle consommée. Le quota local de 20 tentatives est distinct de l’offre du fournisseur.
+- Codex connecté à ChatGPT, mais `codex exec` échoue avec « Access is denied » depuis la session isolée de l’assistant. Un ancien worker ne retrouvait pas non plus le CLI. Le lanceur recherche maintenant le CLI officiel installé par l’application et renouvelle seulement un worker inactif. L’appel sous la session Windows habituelle reste à vérifier.
+- Le journal affiche la durée réelle entre ouverture et clôture. La fenêtre de signal 1 s n’est pas une durée de détention. Plusieurs comptes paper peuvent ouvrir simultanément, chacun avec une position nette ; aucun portefeuille delta/gamma neutral n’est implémenté.
+- La récursivité actuelle ajuste des paramètres bornés, conserve les lignées et compare les descendants. Le défaut de code de la démo reste volontairement un helper de présentation. La réécriture des formules de stratégie à partir de diagnostics et leur évaluation hors échantillon ne sont pas encore implémentées.
+
+Pour reprendre l’appel réel : configurer uniquement `OPENROUTER_API_KEY` dans `.env` pour les agents de recherche ; relancer `Demarrer-Darwin-Demo.cmd` sous Windows pour le worker Codex, puis lancer la démonstration Codex dans Factory. Aucune clé OpenAI n’est demandée pour Codex. Les propositions restent soumises à validation humaine avant intégration.

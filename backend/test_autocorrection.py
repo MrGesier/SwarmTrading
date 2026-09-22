@@ -120,3 +120,15 @@ def test_local_demo_auth(tmp_path):
         assert client.get('/api/autocorrection/session').status_code==200
         assert client.get('/api/autocorrection/state').status_code==200
         assert client.post('/api/autocorrection/demo',json={}).status_code==403
+
+
+def test_desktop_codex_discovery_without_path(tmp_path,monkeypatch):
+    import demo_worker
+    monkeypatch.delenv('DARWIN_CODEX_BIN',raising=False)
+    monkeypatch.setattr(demo_worker.shutil,'which',lambda _:None)
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path))
+    cli=tmp_path/'OpenAI/Codex/bin/version/codex.exe'
+    cli.parent.mkdir(parents=True);cli.write_bytes(b'fixture')
+    assert demo_worker.resolve_codex()==str(cli)
+    monkeypatch.setenv('DARWIN_CODEX_BIN',str(tmp_path/'missing.exe'))
+    assert demo_worker.resolve_codex() is None
