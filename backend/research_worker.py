@@ -2,6 +2,7 @@
 import ast
 import json
 import math
+import re
 import os
 from pathlib import Path
 import sqlite3
@@ -135,7 +136,10 @@ def execute_research(queue,job,root):
             body.write_text('Measured incident: '+str(pack['incident'].get('code'))+'\n\n'+str(proposal['hypothesis'])+
                 '\n\nOnly the isolated research signal policy changes. Not integrated into active trading. No invented defect.\n\nValidation: restricted contracts, backend regression, TypeScript and build passed. Held-out recorded-market comparison: '+
                 comparison['verdict']+'; net delta '+str(comparison['delta_net_usd'])+' USD. No future-live validation or profitability proof. Human review required.\n\nCandidate '+candidate,encoding='utf-8')
-            out=run(['gh','pr','create','--draft','--base',base_branch,'--head',branch,'--title','Research candidate: '+str(pack['incident'].get('code'))+' signal policy','--body-file',str(body)],root,60)
+            remote=git(['remote','get-url','origin'],root)
+            match=re.fullmatch(r'(?:https://github\.com/|git@github\.com:)([\w.-]+/[\w.-]+?)(?:\.git)?',remote)
+            if not match:raise ValueError('Unsupported publication remote')
+            out=run(['gh','pr','create','--repo',match.group(1),'--draft','--base',base_branch,'--head',branch,'--title','Research candidate: '+str(pack['incident'].get('code'))+' signal policy','--body-file',str(body)],root,60)
             if out['exit_code']:raise ConnectionError('Candidate branch published; draft PR creation failed')
             url=out['stdout'].strip().splitlines()[-1]
             if not url.startswith('https://github.com/'):raise ValueError('Unexpected PR response')
