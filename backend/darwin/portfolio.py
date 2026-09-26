@@ -23,6 +23,8 @@ class SharedPortfolio:
         self.books = {}
         self.funding = {}
         self.last_sequences = {}
+        self.ready_since = {}
+        self.confirmations = {}
         self.data = dict(version=1, initial_eur=1000.0, cash_eur=1000.0,
                          fx=None, positions=[], closed=[], fees_eur=0.0,
                          funding_eur=0.0, next_id=1, history=[], cooldown={},
@@ -92,7 +94,9 @@ class SharedPortfolio:
             return False
         if kind=="directional" and sum(p["kind"]=="directional" for p in self.data["positions"])>=18: return False
         if any(p["strategy_id"]==strategy_id for p in self.data["positions"]): return False
-        if now-self.data["cooldown"].get(strategy_id,0) < 60: return False
+        if now-self.data["cooldown"].get(strategy_id,0) < max(60,(policy or {}).get("cooldown_seconds",0)): return False
+        family_key=legs[0]["instrument"]+":"+(policy or {}).get("family",strategy_id)
+        if now-self.data["cooldown"].get(family_key,0)<60: return False
         if any(not self.fresh(l["instrument"],now) for l in legs): return False
         fills=[]
         for l in legs:
@@ -149,6 +153,8 @@ class SharedPortfolio:
             net_eur=pnl-p["entry_fees_eur"]-exit_fees+p["funding_eur"],fees_eur=p["entry_fees_eur"]+exit_fees,reason=reason,legs=[{**l,"exit":px,"exit_fee_eur":fee} for l,px,fee in fills]))
         self.data["positions"].remove(p)
         self.data["cooldown"][p["strategy_id"]]=now
+        family_key=p["legs"][0]["instrument"]+":"+p["policy"].get("family",p["strategy_id"])
+        self.data["cooldown"][family_key]=now
         self.save()
         return True
 
@@ -167,7 +173,10 @@ class SharedPortfolio:
     def observe(self, state, strategies, decimals):
         if not self.fx: return
         now=time.time(); symbol=state["symbol"]; key="perp:"+symbol.replace("USDT","")
-        if state.get("venue")!="HYPERLIQUID" or state.get("health",{}).get("status")!="HEALTHY": return
+        if state.get("venue")!="HYPERLIQUID" or state.get("health",{}).get("status")!="HEALTHY":
+            self.ready_since.pop(key,None)
+            self.confirmations={k:v for k,v in self.confirmations.items() if not k.startswith(symbol+":")}
+            return
         ts=state["timestamp"]-float(state.get("health",{}).get("age_ms") or 0)/1000
         sequence=state.get("health",{}).get("sequence")
         if sequence!=self.last_sequences.get(key):
@@ -193,14 +202,27 @@ class SharedPortfolio:
             elif age>=g["max_holding_seconds"]: reason="max_holding"
             elif age>=60 and (raw*l["qty"]<=0 or abs(raw)<g["exit_threshold"]): reason="signal_decay"
             if reason: self.close(p,now,reason)
-        if state.get("intent",{}).get("state")=="RISK_OFF": return
+        if state.get("intent",{}).get("state")=="RISK_OFF":
+            self.ready_since.pop(key,None)
+            self.confirmations={k:v for k,v in self.confirmations.items() if not k.startswith(symbol+":")}
+            return
+        self.ready_since.setdefault(key,now)
+        if now-self.ready_since[key]<15: return
         # One sleeve per family and market; every sleeve draws on the same ledger.
         used={p["policy"].get("family") for p in self.data["positions"] if p["kind"]=="directional" and p["legs"][0]["instrument"]==key}
         candidates=sorted(active.values(),key=lambda g:abs(raw_signal_for_genome(state["features"],g)),reverse=True)
         for g in candidates:
             if g["family"] in used: continue
             raw=raw_signal_for_genome(state["features"],g)
-            if abs(raw)<g["threshold"]: continue
+            strategy_key=symbol+":"+g["id"]
+            direction=1 if raw>0 else -1
+            previous,count=self.confirmations.get(strategy_key,(0,0))
+            if abs(raw)<g["threshold"]:
+                self.confirmations.pop(strategy_key,None)
+                continue
+            count=count+1 if previous==direction else 1
+            self.confirmations[strategy_key]=(direction,count)
+            if count<int(g.get("confirmation_ticks",1)): continue
             b=self.books[key]
             if (b["asks"][0][0]/b["bids"][0][0]-1)*10000>3: continue
             budget=min(100,self.totals()["equity_eur"]*.1)

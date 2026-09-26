@@ -102,8 +102,18 @@ def test_signal_can_recover_on_same_fresh_book_without_refilling_depth(tmp_path,
     p.observe(s,[g],3)
     assert not p.data["positions"]
     s["intent"]["state"]="LONG_EARLY"
+    p.ready_since["perp:BTC"]=now-16
     p.observe(s,[g],3)
     assert len(p.data["positions"])==1
     remaining=p.books["perp:BTC"]["asks"][0][1]
     p.observe(s,[g],3)
     assert p.books["perp:BTC"]["asks"][0][1]==remaining
+
+
+def test_family_cooldown_cannot_be_bypassed_by_new_variant(tmp_path):
+    p=setup(tmp_path);now=time.time();book(p,"perp:BTC",now)
+    assert p.open("variant1",[leg("perp:BTC",1)],now,policy={"family":"Momentum"})
+    assert p.close(p.data["positions"][0],now,"risk_off")
+    assert not p.open("variant2",[leg("perp:BTC",1)],now+1,policy={"family":"Momentum"})
+    book(p,"perp:BTC",now+61)
+    assert p.open("variant2",[leg("perp:BTC",1)],now+61,policy={"family":"Momentum"})
