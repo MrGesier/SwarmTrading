@@ -5,6 +5,8 @@ responsible for numerical truth, strategy bounds, paper accounting and risk.
 """
 from __future__ import annotations
 
+import asyncio
+
 import os
 import time
 from pathlib import Path
@@ -78,6 +80,8 @@ class DarwinSupervisor:
         self._emit("factory_started", {"population": len(self.population.accounts)}, agent_id="atlas")
 
     def observe(self, state: dict[str, Any]) -> None:
+        if getattr(self, "_epoch_running", False):
+            return  # Flat accounts between windows; never count unobserved research time.
         self._last_state = state
         self.population.observe(state)
         self.baseline.observe(state)
@@ -155,7 +159,7 @@ class DarwinSupervisor:
         eligible = sum(r["sample_seconds"] >= self.cfg.min_sample_seconds and r["closed_trades"] >= self.cfg.min_closed_trades for r in rows)
         deadline = self.next_research_at()
         remaining = max(0.0, deadline - time.time())
-        status = "DISABLED" if not self.auto_epoch_enabled else "COLLECTING" if remaining else "READY" if eligible else "WAITING_EVIDENCE"
+        status = "RESEARCH_RUNNING" if getattr(self, "_epoch_running", False) else "DISABLED" if not self.auto_epoch_enabled else "COLLECTING" if remaining else "READY" if eligible else "WAITING_EVIDENCE"
         recent = self.store.recent_epochs(1)
         return {"status": status, "next_at": deadline,
                 "trigger": "AUTO_REPAIR" if self.repair_actionable() else "SCHEDULED",
@@ -255,6 +259,41 @@ class DarwinSupervisor:
             return plan
 
     def run_epoch(self, *, force: bool = False) -> dict[str, Any]:
+        """Synchronous driver for offline regression/replay only."""
+        if getattr(self, '_epoch_running', False):return {'ran':False,'reason':'RESEARCH_RUNNING'}
+        self._epoch_running=True
+        steps=self._epoch_steps(force=force)
+        value=None
+        try:
+            while True:
+                try:operation=steps.send(value)
+                except StopIteration as done:return done.value
+                value=operation()
+        finally:
+            steps.close()
+            self._epoch_running=False
+
+    async def run_epoch_async(self, *, force: bool = False) -> dict[str, Any]:
+        """Keep market/websocket event loop responsive while advisory models work."""
+        if getattr(self, '_epoch_running', False):return {'ran':False,'reason':'RESEARCH_RUNNING'}
+        self._epoch_running=True
+        steps=self._epoch_steps(force=force)
+        value=None
+        try:
+            while True:
+                try:operation=steps.send(value)
+                except StopIteration as done:return done.value
+                pending=asyncio.create_task(asyncio.to_thread(operation))
+                try:value=await asyncio.shield(pending)
+                except asyncio.CancelledError:
+                    # Do not resume paper while a model callback is still running.
+                    await pending
+                    raise
+        finally:
+            steps.close()
+            self._epoch_running=False
+
+    def _epoch_steps(self, *, force: bool = False):
         if not force and not self.due():
             return {"ran": False, "seconds_until_next": max(0.0, self.next_research_at() - time.time())}
 
@@ -297,7 +336,7 @@ class DarwinSupervisor:
         strategy_map = {s["id"]: s for s in self.store.strategies(include_killed=True)}
 
         self._emit("agent_started", {"task": "audit frozen deterministic selection"}, agent_id="judge")
-        judge_audit = self.brains.judge_audit(evaluations, champion_id)
+        judge_audit = yield lambda: self.brains.judge_audit(evaluations, champion_id)
         self._remember_agent("judge", judge_audit)
         self._emit("agent_started", {"task": "audit paper execution environment"}, agent_id="forge")
         forge_audit = self.brains.forge_audit(self._last_state or {}, rows)
@@ -353,7 +392,7 @@ class DarwinSupervisor:
         selected_ids: list[str] = diverse([r["strategy_id"] for r in ranked])
         if ranked:
             self._emit("agent_started", {"task": "select diverse experiment parents"}, agent_id="atlas")
-            atlas = self.brains.select_parents(ranked, recent_lessons)
+            atlas = yield lambda: self.brains.select_parents(ranked, recent_lessons)
             self._remember_agent("atlas", atlas)
             allowed = {r["strategy_id"] for r in ranked}
             proposed = atlas.data.get("selected_strategy_ids", []) if isinstance(atlas.data, dict) else []
@@ -369,8 +408,8 @@ class DarwinSupervisor:
             parent = strategy_map.get(parent_id)
             if not parent_row or not parent:
                 continue
-            plan = self._validated_plan(parent_row, recent_lessons)
-            plan = self._evolve_plan(parent, plan)
+            plan = yield lambda: self._validated_plan(parent_row, recent_lessons)
+            plan = yield lambda: self._evolve_plan(parent, plan)
             plan = self.novel_plan(parent, plan)
             plan_row = {"parent_id": parent["id"], **plan.to_dict()}
             experiment_plans.append(plan_row)
@@ -442,7 +481,7 @@ class DarwinSupervisor:
         # Keep deterministic lessons and add an LLM-compressed lesson separately.
         write_epoch_memory(self.store, evaluations, champion_id)
         self._emit("agent_started", {"task": "compress evidence into memory"}, agent_id="mnemosyne", strategy_id=champion_id)
-        memory = self.brains.memory_lesson(evaluations, champion_id, experiment_plans)
+        memory = yield lambda: self.brains.memory_lesson(evaluations, champion_id, experiment_plans)
         self._remember_agent("mnemosyne", memory)
         if isinstance(memory.data, dict):
             self.store.add_lesson(

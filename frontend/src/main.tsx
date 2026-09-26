@@ -112,7 +112,7 @@ function Metric({
 function App() {
   const [route, setRoute] = useState(location.pathname),
     [symbol, setSymbol] = useState("BTCUSDT"),
-    [mode, setMode] = useState("simulation"),
+    [mode] = useState("live"),
     [horizon, setHorizon] = useState(5);
   const [live, setLive] = useState<State | null>(null),
     [connection, setConnection] = useState("Connecting to local engine…"),
@@ -486,15 +486,7 @@ function App() {
               </b>
             </div>
             <div className="stream-controls">
-              <select
-                aria-label="Data mode"
-                className={mode === "simulation" ? "simulation-select" : ""}
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-              >
-                <option value="simulation">◉ Simulation</option>
-                <option value="live">◉ Hyperliquid · données réelles</option>
-              </select>
+              <span className="paper-source">Hyperliquid · données actuelles · PAPER</span>
               {route !== "/darwin" && route !== "/factory" && <><select
                 aria-label="Strategy horizon"
                 value={horizon}
@@ -517,24 +509,10 @@ function App() {
               stratégies de cet horizon restent neutres.
             </div>
           )}
-          {mode === "simulation" && (
-            <div className="simulation-note">
-              <FlaskConical size={14} /> SIMULATED DATA{" "}
-              <span>
-                Deterministic market simulation · research scores are
-                uncalibrated
-              </span>
-            </div>
-          )}
           {connection && (
             <div className="notice">
               <Radio size={16} />
               {connection}
-              {mode === "live" && (
-                <button onClick={() => setMode("simulation")}>
-                  Use simulation
-                </button>
-              )}
             </div>
           )}
           {error && (

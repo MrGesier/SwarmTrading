@@ -57,10 +57,15 @@ def test_api_without_providers(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     monkeypatch.setattr(main, 'DATA', tmp_path)
     monkeypatch.setattr(main, 'sessions', {})
+    async def public_stream_stub(self):
+        import asyncio
+        await asyncio.Event().wait()
+    monkeypatch.setattr(main.Session, 'run', public_stream_stub)
     with TestClient(main.app) as client:
         health = client.get('/api/health').json()
         assert health['version'] == '0.11.0'
         assert health['paper_only'] is True
+        assert client.get('/api/state?mode=simulation').status_code == 400
         for route in ('brains/state', 'engineer/state', 'factory/state', 'darwin/research', 'darwin/evolution'):
             response = client.get('/api/' + route)
             assert response.status_code == 200, response.text
@@ -367,3 +372,32 @@ def test_incident_runs_brains_creates_challengers_and_records_reason(tmp_path, m
         assert not supervisor._repair_diagnosis
     finally:
         supervisor.store.close()
+
+
+def test_async_epoch_keeps_event_loop_responsive_and_deduplicates(tmp_path,monkeypatch):
+    import asyncio
+    import threading
+    from darwin.supervisor import DarwinSupervisor
+    monkeypatch.setenv('DARWIN_LLM_ENABLED','false')
+    sup=DarwinSupervisor('BTCUSDT','live',tmp_path)
+    entered=threading.Event();release=threading.Event()
+    def slow_model():
+        entered.set()
+        assert release.wait(3)
+        return 'validated advice'
+    def steps(**kwargs):
+        result=yield slow_model
+        return {'ran':True,'advice':result}
+    monkeypatch.setattr(sup,'_epoch_steps',steps)
+    async def scenario():
+        task=asyncio.create_task(sup.run_epoch_async(force=True))
+        while not entered.is_set():await asyncio.sleep(.005)
+        assert (await sup.run_epoch_async(force=True))['reason']=='RESEARCH_RUNNING'
+        assert sup.cycle_state()['status']=='RESEARCH_RUNNING'
+        sup.observe({'should_not_be_counted_as_market_evidence':True})
+        assert sup._last_state is None
+        release.set()
+        result=await task
+        assert result['advice']=='validated advice'
+        assert not sup._epoch_running
+    asyncio.run(scenario())

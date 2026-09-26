@@ -2,6 +2,8 @@ param([switch]$NoBrowser, [switch]$Repair)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath($PSScriptRoot)
 $env:HYPERLIQUID_ENABLED = 'false'
+$env:DARWIN_AUTOSTART_MODE = 'live'
+$env:DARWIN_MARKET_SOURCE = 'hyperliquid'
 $logRoot = Join-Path $projectRoot 'data'
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
 $launcherLog = Join-Path $logRoot 'launcher.log'

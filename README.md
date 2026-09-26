@@ -1,3 +1,7 @@
+# Lancement courant : Hyperliquid paper
+
+Double-cliquer **Darwin - Hyperliquid Paper** sur le bureau, ou `Demarrer-Darwin-Paper.cmd`. Données actuelles Hyperliquid, ordres simulés localement, aucun wallet requis. Voir [HYPERLIQUID_PAPER.md](HYPERLIQUID_PAPER.md) pour la boucle, les limites et le futur réel.
+
 > Local V1 hardening: see [V1_VALIDATION.md](V1_VALIDATION.md) for Windows launch, executed checks, provider status and remaining work. Current target branch: `darwin-v0.11-factory-evolution`; do not merge PR #1.
 
 # Swarm Trade by Mister Gésier — V0.11 Evolution Observatory + Factory Crew

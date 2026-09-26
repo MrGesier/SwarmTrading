@@ -60,7 +60,7 @@ def create_demo_router(root, get_session, select_provider=None):
     async def demo(req:DemoRequest,request:Request):
         auth(request,True)
         if req.provider not in ('codex-cli','mock'):raise HTTPException(400,'Unsupported demo provider')
-        supervisor=get_session('BTCUSDT','simulation').darwin
+        supervisor=get_session('BTCUSDT','live').darwin
         pack=supervisor.engineer.task_pack(supervisor,objective='V3 controlled display-helper defect, isolated patch, independent tests, human review')
         job=queue.enqueue(pack,req.provider)
         supervisor._emit('engineer_task_prepared',{'demo_id':job['id'],'state':job['state'],'provider':req.provider},agent_id='codex')

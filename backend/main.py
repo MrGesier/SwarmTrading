@@ -87,6 +87,7 @@ class Session:
         self.states = deque(maxlen=1200)
         self.recorder = Recorder(symbol, mode)
         self.task = None
+        self.research_task = None
         self.rng = random.Random(42)
         self.price = {'BTCUSDT': 64280, 'ETHUSDT': 2680, 'SOLUSDT': 148}[symbol]
         self.n = 0
@@ -142,11 +143,18 @@ class Session:
             self.states.append(state)
             try:
                 self.darwin.observe(state)
-                if self.darwin.due():
-                    self.darwin.run_epoch()
+                if self.darwin.due() and (self.research_task is None or self.research_task.done()):
+                    self.research_task = asyncio.create_task(self.research_cycle())
                 self.darwin_error = ""
             except Exception as exc:
                 self.darwin_error = f"{type(exc).__name__}: {str(exc)[:180]}"
+
+    async def research_cycle(self):
+        try:
+            await self.darwin.run_epoch_async()
+            self.darwin_error = ''
+        except Exception as exc:
+            self.darwin_error = f'{type(exc).__name__}: research cycle failed'
 
     def simulate(self, ts):
         self.n += 1
@@ -272,9 +280,9 @@ class Session:
 sessions = {}
 
 
-def get_session(symbol='BTCUSDT', mode='simulation'):
-    if symbol not in SYMBOLS or mode not in ['simulation', 'live']:
-        raise HTTPException(400, 'Unsupported symbol or mode')
+def get_session(symbol='BTCUSDT', mode='live'):
+    if symbol not in SYMBOLS or mode != 'live':
+        raise HTTPException(400, 'Only current Hyperliquid data with paper trading is supported')
     key = (symbol, mode)
     if key not in sessions:
         s = sessions[key] = Session(symbol, mode)
@@ -285,9 +293,10 @@ def get_session(symbol='BTCUSDT', mode='simulation'):
 @asynccontextmanager
 async def lifespan(app):
     autostart_symbol = os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT')
-    autostart_mode = os.getenv('DARWIN_AUTOSTART_MODE', 'simulation')
+    autostart_mode = 'live'
     get_session(autostart_symbol, autostart_mode)
     yield
+    await asyncio.gather(*(s.research_task for s in sessions.values() if s.research_task), return_exceptions=True)
     for s in sessions.values():
         s.task.cancel()
     await asyncio.gather(*(s.task for s in sessions.values()), return_exceptions=True)
@@ -323,13 +332,13 @@ def health():
 
 
 @app.get('/api/state')
-async def state(symbol: str = 'BTCUSDT', mode: str = 'simulation'):
+async def state(symbol: str = 'BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     return s.latest or dict(status=s.health, message=s.error)
 
 
 @app.websocket('/ws')
-async def stream(ws: WebSocket, symbol: str = 'BTCUSDT', mode: str = 'simulation'):
+async def stream(ws: WebSocket, symbol: str = 'BTCUSDT', mode: str='live'):
     origin = ws.headers.get('origin')
     forwarded_host = ws.headers.get('x-forwarded-host') or ws.headers.get('host')
     same_host = bool(origin and forwarded_host and origin.split('://')[-1].rstrip('/') == forwarded_host)
@@ -337,7 +346,7 @@ async def stream(ws: WebSocket, symbol: str = 'BTCUSDT', mode: str = 'simulation
         await ws.close(code=1008)
         return
     await ws.accept()
-    if symbol not in SYMBOLS or mode not in ['simulation', 'live']:
+    if symbol not in SYMBOLS or mode != 'live':
         await ws.close(code=1008)
         return
     s = get_session(symbol, mode)
@@ -353,7 +362,7 @@ async def stream(ws: WebSocket, symbol: str = 'BTCUSDT', mode: str = 'simulation
 
 class Counterfactual(BaseModel):
     symbol: str = 'BTCUSDT'
-    mode: str = 'simulation'
+    mode: str='live'
     price_bp: float = Field(0, ge=-100, le=100)
     vol_scale: float = Field(1, ge=.2, le=3)
     flow_delta: float = Field(0, ge=-1, le=1)
@@ -376,7 +385,7 @@ async def counterfactual(c: Counterfactual):
 
 
 @app.get('/api/analysis')
-async def analysis(symbol: str='BTCUSDT',mode: str='simulation',horizon: int=5):
+async def analysis(symbol: str='BTCUSDT',mode: str='live',horizon: int=5):
     s=get_session(symbol,mode)
     if horizon not in HORIZONS:
         raise HTTPException(400,'Unsupported horizon')
@@ -387,7 +396,7 @@ async def analysis(symbol: str='BTCUSDT',mode: str='simulation',horizon: int=5):
 
 class CostRequest(BaseModel):
     symbol: str='BTCUSDT'
-    mode: str='simulation'
+    mode: str='live'
     notional: float=Field(10000,gt=0,le=10000000)
     fee_bps: float=Field(10,ge=0,le=100)
 
@@ -403,7 +412,7 @@ async def preview(c:CostRequest):
 
 
 @app.get('/api/replay')
-async def replay(symbol: str = 'BTCUSDT', mode: str = 'simulation'):
+async def replay(symbol: str = 'BTCUSDT', mode: str='live'):
     from fastapi.responses import Response
     s = get_session(symbol, mode)
     # Compact state frames preserve every panel at that instant, without future history.
@@ -418,7 +427,7 @@ def recordings():
 
 
 @app.get('/api/export')
-async def export(symbol: str = 'BTCUSDT', mode: str = 'simulation'):
+async def export(symbol: str = 'BTCUSDT', mode: str='live'):
     from fastapi.responses import Response
     s = get_session(symbol, mode)
     await s.recorder.flush()
@@ -426,7 +435,7 @@ async def export(symbol: str = 'BTCUSDT', mode: str = 'simulation'):
 
 
 @app.get('/api/darwin/state')
-async def darwin_state(symbol: str='BTCUSDT', mode: str='simulation'):
+async def darwin_state(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     result = s.darwin.state()
     result['error'] = s.darwin_error
@@ -434,25 +443,25 @@ async def darwin_state(symbol: str='BTCUSDT', mode: str='simulation'):
 
 
 @app.get('/api/darwin/evolution')
-async def darwin_evolution(symbol: str='BTCUSDT', mode: str='simulation', limit: int=120):
+async def darwin_evolution(symbol: str='BTCUSDT', mode: str='live', limit: int=120):
     s = get_session(symbol, mode)
     return s.darwin.evolution_state(max(1, min(limit, 500)))
 
 
 @app.post('/api/darwin/epoch')
-async def darwin_epoch(symbol: str='BTCUSDT', mode: str='simulation', force: bool=True):
+async def darwin_epoch(symbol: str='BTCUSDT', mode: str='live', force: bool=True):
     s = get_session(symbol, mode)
-    return s.darwin.run_epoch(force=force)
+    return await s.darwin.run_epoch_async(force=force)
 
 
 @app.get('/api/darwin/memory')
-async def darwin_memory(symbol: str='BTCUSDT', mode: str='simulation', limit: int=20):
+async def darwin_memory(symbol: str='BTCUSDT', mode: str='live', limit: int=20):
     s = get_session(symbol, mode)
     return dict(lessons=s.darwin.store.recent_lessons(max(1,min(limit,100))), epochs=s.darwin.store.recent_epochs(20))
 
 
 @app.get('/api/darwin/research')
-async def darwin_research(symbol: str='BTCUSDT', mode: str='simulation'):
+async def darwin_research(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     result = s.darwin.research_state()
     result['paper_only'] = not hyperliquid_executor.status().get('ready', False)
@@ -460,7 +469,7 @@ async def darwin_research(symbol: str='BTCUSDT', mode: str='simulation'):
 
 
 @app.get('/api/darwin/strategy/{strategy_id}')
-async def darwin_strategy(strategy_id: str, symbol: str='BTCUSDT', mode: str='simulation'):
+async def darwin_strategy(strategy_id: str, symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     detail = s.darwin.store.strategy_detail(strategy_id)
     if not detail:
@@ -469,7 +478,7 @@ async def darwin_strategy(strategy_id: str, symbol: str='BTCUSDT', mode: str='si
 
 
 @app.get('/api/brains/state')
-async def brains_state(symbol: str='BTCUSDT', mode: str='simulation'):
+async def brains_state(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     return {
         'policy': policy_state(),
@@ -481,12 +490,12 @@ async def brains_state(symbol: str='BTCUSDT', mode: str='simulation'):
 
 class EngineerTaskRequest(BaseModel):
     symbol: str = 'BTCUSDT'
-    mode: str = 'simulation'
+    mode: str='live'
     objective: str | None = Field(default=None, max_length=1200)
 
 
 @app.get('/api/engineer/state')
-async def engineer_state(symbol: str='BTCUSDT', mode: str='simulation'):
+async def engineer_state(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     return s.darwin.engineer_state()
 
@@ -503,7 +512,7 @@ async def openbot_state():
 
 
 @app.get('/api/openbot/context/{agent_id}')
-async def openbot_context(agent_id: str, request: Request, symbol: str='BTCUSDT', mode: str='simulation'):
+async def openbot_context(agent_id: str, request: Request, symbol: str='BTCUSDT', mode: str='live'):
     if agent_id not in OPENBOT_COWORKERS:
         raise HTTPException(404, 'Unknown OpenBot coworker')
     if not openbot_authorised(request.headers):
@@ -524,7 +533,7 @@ async def openbot_ag_ui(agent_id: str, request: Request):
 
 
 @app.get('/api/agents/state')
-async def agents_state(symbol: str='BTCUSDT', mode: str='simulation'):
+async def agents_state(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     dstate = s.darwin.state()
     return agent_runtime_state(
@@ -538,7 +547,7 @@ async def agents_state(symbol: str='BTCUSDT', mode: str='simulation'):
 
 
 @app.get('/api/factory/state')
-async def factory_state_api(symbol: str='BTCUSDT', mode: str='simulation'):
+async def factory_state_api(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     dstate = s.darwin.state()
     agents = agent_runtime_state(
@@ -552,21 +561,21 @@ async def factory_state_api(symbol: str='BTCUSDT', mode: str='simulation'):
 
 
 @app.get('/api/factory/events')
-async def factory_events(symbol: str='BTCUSDT', mode: str='simulation', limit: int=120, after_id: int | None=None):
+async def factory_events(symbol: str='BTCUSDT', mode: str='live', limit: int=120, after_id: int | None=None):
     s = get_session(symbol, mode)
     events = s.darwin.store.recent_factory_events(limit=max(1, min(limit, 500)), after_id=after_id)
     return {'events': decorate_events(events)}
 
 
 @app.websocket('/ws/factory')
-async def factory_stream(ws: WebSocket, symbol: str='BTCUSDT', mode: str='simulation'):
+async def factory_stream(ws: WebSocket, symbol: str='BTCUSDT', mode: str='live'):
     origin = ws.headers.get('origin')
     forwarded_host = ws.headers.get('x-forwarded-host') or ws.headers.get('host')
     same_host = bool(origin and forwarded_host and origin.split('://')[-1].rstrip('/') == forwarded_host)
     if origin and origin not in ALLOWED_ORIGINS and not same_host:
         await ws.close(code=1008)
         return
-    if symbol not in SYMBOLS or mode not in ['simulation', 'live']:
+    if symbol not in SYMBOLS or mode != 'live':
         await ws.close(code=1008)
         return
     await ws.accept()
@@ -599,7 +608,7 @@ def runtime_state():
         'version': '0.11.0',
         'data_dir': str(DATA),
         'autostart_symbol': os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT'),
-        'autostart_mode': os.getenv('DARWIN_AUTOSTART_MODE', 'simulation'),
+        'autostart_mode': 'live',
         'market_source': os.getenv('DARWIN_MARKET_SOURCE', 'hyperliquid'),
         'paper_only': not hyperliquid_executor.status().get('ready', False),
     }
