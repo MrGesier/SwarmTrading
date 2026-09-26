@@ -321,8 +321,8 @@ function App() {
         >
           <span className="brand-icon">
             <img
-              src="/mister-gesier-logo.png"
-              alt="Crêtes des Pyrénées et courbe de trading"
+              src="/swarm-trading-logo.png"
+              alt="Swarm Trading — symbole en rubans turquoise"
             />
           </span>
           <span>
