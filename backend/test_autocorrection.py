@@ -100,7 +100,7 @@ def test_isolated_patch_pipeline(demo_repo,tmp_path,kind,expected):
         return {'hypothesis':'fixture','path':TARGET if kind!='outside' else 'backend/darwin/judge.py',
                 'code':original.decode() if kind=='good' else broken+'\n# intentionally wrong\n'}
     output=execute(queue,job,demo_repo,proposer=proposal,regression=lambda work:True)
-    assert output['state']==expected
+    assert output['state']==expected, output.get('reason')
     assert output['real_call'] is False
     assert (demo_repo/TARGET).read_bytes()==original
     assert output['checks'][0]['exit_code']==0
