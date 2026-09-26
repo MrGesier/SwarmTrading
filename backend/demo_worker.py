@@ -93,7 +93,7 @@ def run(command,cwd,timeout=180,input_text=None,codex=False):
     start=time.time()
     try:
         r=subprocess.run(command,cwd=cwd,env=clean_env(codex),input=input_text,text=True,encoding='utf-8',errors='replace',capture_output=True,timeout=timeout)
-        return {'command':command,'exit_code':r.returncode,'seconds':round(time.time()-start,2),'output':redacted((r.stdout+'\n'+r.stderr)[-24000:])}
+        return {'command':command,'exit_code':r.returncode,'seconds':round(time.time()-start,2),'output':redacted((r.stdout+'\n'+r.stderr)[-24000:]),'stdout':redacted(r.stdout)}
     except subprocess.TimeoutExpired:
         return {'command':command,'exit_code':124,'seconds':round(time.time()-start,2),'output':'Timeout; no candidate accepted'}
 
@@ -101,7 +101,8 @@ def run(command,cwd,timeout=180,input_text=None,codex=False):
 def git(args,cwd):
     r=run(['git','-c','safe.directory='+str(cwd),'-c','core.autocrlf=true',*args],cwd)
     if r['exit_code']:raise RuntimeError('Git operation failed: '+r['output'][:300])
-    return r['output'].strip()
+    # Git warnings belong to diagnostics, never to filenames or commit IDs.
+    return r['stdout'].strip()
 
 
 def execute(queue,job,root=ROOT,proposer=None,regression=None):
@@ -124,7 +125,7 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
         if not check('pristine contract',[sys.executable,'-I','-B',str(test_path),str(target)],work):raise ValueError('Reference baseline failed')
         broken=original.replace("return 'NO_CHECKS'","return 'PASSED'")
         if broken==original:raise ValueError('Known controlled defect injection unavailable')
-        target.write_text(broken,encoding='utf-8')
+        target.write_text(broken,encoding='utf-8',newline='\n')
         git(['add',TARGET],work)
         git(['-c','user.name=Darwin Demo','-c','user.email=demo@localhost','commit','-m','Controlled display-only defect in isolated demo'],work)
         base=git(['rev-parse','HEAD'],work)
@@ -170,7 +171,7 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
         code=safe_code(proposal['code'])
         # Reject any unexpected write by Codex before materializing its structured proposal.
         if git(['status','--porcelain','--untracked-files=all'],work):raise ValueError('Unexpected worktree writes by provider')
-        target.write_text(code,encoding='utf-8')
+        target.write_text(code,encoding='utf-8',newline='\n')
         changed=git(['diff','--name-only'],work).splitlines()
         if changed!=[TARGET]:raise ValueError('Empty diff or files outside allowlist')
         diff=git(['diff','--no-ext-diff','--no-color'],work)

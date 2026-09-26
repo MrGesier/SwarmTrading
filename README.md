@@ -32,7 +32,7 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 Restart Darwin after changing environment settings. Existing process environment variables take precedence over `.env`.
 
-- `DARWIN_AUTOSTART_MODE=simulation`: offline synthetic data. `live` means public market data, not permission to execute orders.
+- `DARWIN_AUTOSTART_MODE=live`: current public Hyperliquid market data with paper execution. Synthetic sessions are not exposed by the application.
 - `DARWIN_AUTO_EPOCH_ENABLED=true`, `DARWIN_EPOCH_SECONDS=86400`: automatic daily selection, subject to evidence gates; the initial schedule survives restart.
 - `DARWIN_PAPER_FEE_BPS=3.5`: modeled fee per fill, not a verified Hyperliquid account tier. Changing accounting settings with an existing checkpoint is rejected; keep original settings or use a separate data directory.
 - `DARWIN_LLM_ENABLED=true`: allows configured research providers; without a key the deterministic fallback remains usable. Set `false` to disable provider calls explicitly.
@@ -74,7 +74,7 @@ Binance depth initialization opens and buffers the stream before the REST snapsh
 
 The public adapter follows Binance's [Spot WebSocket streams documentation](https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams). Exchange connectivity depends on network and regional access.
 
-Raw snapshot, depth, trade, quote, and engine-clock events are recorded under `data/<mode>-<symbol>-<session>/` as Zstandard-compressed Parquet parts. Each part stores receive time and the original event payload. Recording happens for simulation as well as live data. Buffered events flush at batch thresholds, export, and graceful shutdown; abrupt process termination can lose the current unflushed batch. Raw recording is configurable with `DARWIN_RECORD_RAW`; each session keeps at most `DARWIN_RECORD_MAX_PARTS` part files (240 by default) to prevent unbounded disk growth. Set the cap to `0` only if you intentionally want unlimited parts.
+Raw snapshot, depth, trade, quote, and engine-clock events are recorded under `data/<mode>-<symbol>-<session>/` as Zstandard-compressed Parquet parts. Each part stores receive time and the original event payload. The application records current Hyperliquid data; synthetic generators remain only in offline tests. Buffered events flush at batch thresholds, export, and graceful shutdown; abrupt process termination can lose the current unflushed batch. Raw recording is configurable with `DARWIN_RECORD_RAW`; each session keeps at most `DARWIN_RECORD_MAX_PARTS` part files (240 by default) to prevent unbounded disk growth. Set the cap to `0` only if you intentionally want unlimited parts.
 
 Replay a persisted recording:
 
@@ -258,7 +258,7 @@ A separate **CODEX ENGINEER** sits above the Troll Factory. It can prepare an au
 
 Useful V0.9 endpoints:
 
-- `GET /api/brains/state?symbol=BTCUSDT&mode=simulation` — brain policy, runtime/model status, usage/cost and engineer state.
+- `GET /api/brains/state?symbol=BTCUSDT&mode=live` — brain policy, runtime/model status, usage/cost and engineer state.
 - `GET /api/engineer/state` — CODEX ENGINEER boundary and recent prepared tasks.
 - `POST /api/engineer/task` — freeze a code-only task pack from current research evidence.
 - `GET /api/factory/state` — Troll Factory state including brain classes and Codex Engineer.

@@ -26,7 +26,7 @@ $remoteLine=(Run-Native git ($gitAuth+@('ls-remote','origin',('refs/heads/'+$bra
 if(($remoteLine -split '\s+')[0] -ne $sha){throw 'Commit distant different du commit local.'}
 $prs=((Run-Native $gh @('pr','list','--repo',$remote,'--head',$branch,'--base',$base,'--state','open','--json','number,url')) -join "`n") | ConvertFrom-Json
 $body=Join-Path $repo 'PR_V3.md'
-$title='Darwin: local LLM research and isolated correction demo'
+$title='Darwin: Hyperliquid paper, async LLM research and reviewed code proposals'
 if(@($prs).Count){
   Run-Native $gh @('pr','edit',[string]$prs[0].number,'--repo',$remote,'--title',$title,'--body-file',$body)
   Write-Host $prs[0].url

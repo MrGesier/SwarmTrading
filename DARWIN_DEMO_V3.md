@@ -71,3 +71,10 @@ Le serveur local tourne en paper. Après redémarrage avec accès réseau, le pi
 Le cycle emploie encore des appels synchrones : l’interface et le flux peuvent attendre pendant les requêtes LLM. Il faut isoler ce travail avant de qualifier le fonctionnement continu de robuste. Codex CLI connecté à ChatGPT reste bloqué par Windows dans la session isolée ; le dernier worker existant signalait un CLI introuvable. La démo de code complète est donc validée en mock seulement.
 
 80 tests backend repassés avec `DARWIN_LLM_ENABLED=false`. La PR #1 au commit e3595e1 a une exécution CI réussie (run 35570310963), sans fil de revue ouvert. La publication V3 n’a pas réussi : CLI GitHub refusé par Windows, push Git en échec, connecteur GitHub en lecture autorisé mais création de tree refusée HTTP 403 `Resource not accessible by integration`. Aucun nouvel objet Git ni PR n’est prétendu publié. `Publish-Darwin-V3.ps1` et le raccourci `outputs/Publier-Darwin-V3.cmd` préparent une PR en brouillon basée sur la branche de #1, avec contrôle de branche, arbre propre, ascendance et SHA distant, sans force-push ni fusion.
+
+
+## Validation du 26 septembre 2026 — état actuel
+
+Les restrictions Windows signalées dans les observations historiques ci-dessus sont résolues dans la session actuelle. Le vrai run Codex `c8e7f86a3d4d4c0ea6200ecb979d75ce` a atteint READY_FOR_REVIEW : réponse réelle gpt-6-astra, candidat `89bb709ecbf34791fa3b01c8a023eb2cfedf70ac`, 81 tests backend, TypeScript et build réussis. Le défaut contrôlé a bien échoué avant correction. Aucune intégration du candidat.
+
+Les appels de recherche passent désormais hors de la boucle événementielle. Pendant leur analyse, les comptes paper restent à plat entre deux fenêtres ; le flux Hyperliquid et l’interface continuent. L’application démarre exclusivement sur les données publiques Hyperliquid actuelles. Les anciennes mesures synthétiques ne sont pas des résultats de marché et ne sont plus sélectionnables dans l’application. Voir HYPERLIQUID_PAPER.md pour le raccourci et les limites actuelles.
