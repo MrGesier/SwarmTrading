@@ -30,7 +30,7 @@ class ResearchLab:
     def recent(self,kind=None,limit=30):
         with self.db() as db:
             rows=db.execute('SELECT id,ts,kind,payload FROM records WHERE (? IS NULL OR kind=?) ORDER BY id DESC LIMIT ?',(kind,kind,limit)).fetchall()
-        return [dict(id=i,ts=t,kind=k,**json.loads(p)) for i,t,k,p in rows]
+        return [{**json.loads(p),"id":i,"ts":t,"kind":k} for i,t,k,p in rows]
 
     def observe(self,state,strategies):
         ts=float(state['timestamp'])

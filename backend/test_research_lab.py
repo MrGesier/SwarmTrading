@@ -107,3 +107,11 @@ def test_code_queue_requires_persistent_incident_and_captured_data(tmp_path,monk
     supervisor=SimpleNamespace(_repair_diagnosis={'code':'FEE_DRAG','actionable':True})
     lab.maybe_queue_code(supervisor)
     with lab.db() as db:assert db.execute("SELECT value FROM meta WHERE key='code_job'").fetchone() is None
+
+
+def test_report_metadata_cannot_override_persisted_identity(tmp_path):
+    lab=ResearchLab(tmp_path/'lab.sqlite')
+    lab.record('batch',{'id':-1,'ts':0,'kind':'wrong','ok':True})
+    row=lab.recent('batch',1)[0]
+    assert row['id']>0 and row['ts']>0 and row['kind']=='batch'
+    assert lab.state()['summary']['batches']==1

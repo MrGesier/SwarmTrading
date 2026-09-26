@@ -56,7 +56,7 @@ export function Autocorrection(){
       <div className="autocorrection-status"><b>{job.state}</b><span>{job.provider} · {job.model??'modèle en attente'} · {job.real_call?'réponse LLM réelle vérifiée':'aucune réponse LLM réelle vérifiée'}</span></div>
       <p>{job.evidence}</p><p>{job.hypothesis??job.reason}</p>
       <ol className="autocorrection-history">{job.history.map((h:any,i:number)=><li key={i}>{h.state}<small>{new Date(h.ts*1000).toLocaleTimeString()}</small></li>)}</ol>
-      {job.base_sha&&<p>Base du défaut : <code>{job.base_sha.slice(0,12)}</code> · Candidat : <code>{job.candidate_sha?.slice(0,12)??'en attente'}</code></p>}
+      {job.base_sha&&<p>Base de la proposition : <code>{job.base_sha.slice(0,12)}</code> · Candidat : <code>{job.candidate_sha?.slice(0,12)??'en attente'}</code></p>}
       {job.checks?.length>0&&<table><thead><tr><th>Vérification</th><th>Code de sortie</th><th>Durée</th></tr></thead><tbody>{job.checks.map((c:any,i:number)=><tr key={i}><td><details><summary>{c.name}</summary><pre>{c.output}</pre><code>{c.command.join(' ')}</code></details></td><td>{c.exit_code}{c.name==='defect reproduction'?' (échec attendu)':''}</td><td>{c.seconds}s</td></tr>)}</tbody></table>}
       {job.comparison&&<details open><summary>Comparaison sur observations réservées</summary><p>{job.comparison.verdict} · Δ net : {Number(job.comparison.delta_net_usd).toFixed(2)} USD</p><pre>{JSON.stringify(job.comparison,null,2)}</pre></details>}
       {job.pr_url&&<p><a href={job.pr_url} target="_blank" rel="noreferrer">Pull request du candidat ↗</a></p>}
