@@ -8,6 +8,7 @@ import sqlite3
 import shutil
 import sys
 import time
+import tempfile
 
 TARGET='backend/darwin/research_policy.py'
 NAMES=('raw_signal','spread','flow','imbalance')
@@ -81,7 +82,7 @@ def execute_research(queue,job,root):
             'Output must be finite within [-1,1]. No imports, loops, attributes, I/O or other calls. '
             'Keep the sign of a nonzero signal; filtering to zero or reducing magnitude is permitted. '
             'Do not claim improved performance. Independent held-out observations will be tested.\nSOURCE:\n'+original+
-            '\nMEASURED INCIDENT:\n'+json.dumps(pack['incident'])+'\nTRAINING SUMMARY:\n'+json.dumps(baseline))
+            '\nMEASURED INCIDENT:\n'+json.dumps({'code':pack['incident'].get('code'),'persistent':True})+'\nTRAINING SUMMARY:\n'+json.dumps(baseline))
         schema={'type':'object','additionalProperties':False,'properties':{'hypothesis':{'type':'string'},'path':{'type':'string','enum':[TARGET]},'code':{'type':'string'}},'required':['hypothesis','path','code']}
         (artifacts/'schema.json').write_text(json.dumps(schema),encoding='utf-8');response=artifacts/'response.json'
         (artifacts/'prompt.txt').write_text(prompt,encoding='utf-8')
@@ -108,7 +109,7 @@ def execute_research(queue,job,root):
         check('restricted policy contracts',[sys.executable,str(root/'backend/research_worker.py'),'--contract',str(work/TARGET)])
         result=check('held-out recorded-market comparison',[sys.executable,str(root/'backend/research_worker.py'),'--replay',str(work/TARGET),str(artifacts/'holdout.json')])
         comparison=json.loads(result['stdout']);update(comparison=comparison)
-        check('backend regression',[sys.executable,'-m','pytest','backend','-q','-p','no:cacheprovider','--basetemp',str(artifacts/'pytest')])
+        check('backend regression',[sys.executable,'-m','pytest','backend','-q','-p','no:cacheprovider','--basetemp',tempfile.mkdtemp(prefix='dr-',dir=root.parent)])
         modules=root/'frontend/node_modules'
         if not modules.exists():raise ValueError('Frontend dependencies unavailable')
         shutil.copytree(modules,work/'frontend/node_modules')

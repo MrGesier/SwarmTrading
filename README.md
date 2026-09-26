@@ -337,7 +337,7 @@ Ouvrir **Wallet Hyperliquid** ou `http://127.0.0.1:8000/hyperliquid` : connexion
 
 ### Journal de recherche et connexion MetaMask
 
-Factory affiche désormais les questions et aperçus de contexte conservés à chaque appel d’agent, ses réponses, son statut (appel réseau réel, cache, repli ou historique non instrumenté), ainsi que les hypothèses et décisions des expériences. Les questions CURIE portent explicitement sur les frais, la durée des positions, les sorties et la contribution non démontrée des indicateurs. Le contexte inclut les derniers trades conservés du parent (au plus 5 parmi les 500 clôtures récentes), sans prétendre constituer un échantillon complet ou une ablation. Les anciennes questions ne sont pas reconstruites.
+Factory affiche désormais les questions et aperçus de contexte conservés à chaque appel d’agent, ses réponses, son statut (appel réseau réel, cache, repli ou historique non instrumenté), ainsi que les hypothèses et décisions des expériences. Les questions CURIE portent explicitement sur les frais, la durée des positions, les sorties et la contribution non démontrée des indicateurs. Les lots incluent des métriques compactes des parents et les comparaisons d’indicateurs terminées, sans prétendre constituer une preuve causale. Les anciennes questions ne sont pas reconstruites.
 
 Les nouveaux trades enregistrent le régime et les indicateurs d’entrée, le brut avant frais et les excursions MAE/MFE sur les ticks observés au milieu du carnet. Les anciennes données restent inconnues. Ces attributs sont de la télémétrie : ils n’ajoutent pas de nouveaux gènes ni de preuve de rentabilité. Les noms courts sont des alias d’affichage ; les identifiants et la filiation sont inchangés.
 

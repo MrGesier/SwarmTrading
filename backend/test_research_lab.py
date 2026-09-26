@@ -85,3 +85,25 @@ def test_automatic_code_job_is_once_per_day_even_after_failure(tmp_path):
     second=q.enqueue({'incident':{'code':'FEE_DRAG'}},kind='research')
     assert second['id']==first['id']
     assert 'no defect injection' in first['evidence']
+
+def test_structured_provider_requests_schema_and_rejects_empty_completion(tmp_path,monkeypatch):
+    requests=[]
+    def response(r):
+        requests.append(json.loads(r.content))
+        return httpx.Response(200,json={'choices':[{'message':{'content':None},'finish_reason':'length'}]})
+    p=free(tmp_path,monkeypatch,response)
+    monkeypatch.setattr(p,'models',lambda:[{'id':'fixture/coder:free','structured':True}])
+    result=p.ask(system='test',task='test',context={},schema=SCHEMA)
+    assert result['status']=='fallback' and result['real_call']
+    assert requests[0]['response_format']['json_schema']['schema']==SCHEMA
+    assert requests[0]['max_tokens']==8192
+
+
+def test_code_queue_requires_persistent_incident_and_captured_data(tmp_path,monkeypatch):
+    lab=ResearchLab(tmp_path/'lab.sqlite')
+    monkeypatch.setenv('DARWIN_AUTO_CODE_RESEARCH','true')
+    # No captured observations: must not enqueue, even with two equal incident reports.
+    for i in range(2):lab.record('epoch_report',{'incident':{'code':'FEE_DRAG'}})
+    supervisor=SimpleNamespace(_repair_diagnosis={'code':'FEE_DRAG','actionable':True})
+    lab.maybe_queue_code(supervisor)
+    with lab.db() as db:assert db.execute("SELECT value FROM meta WHERE key='code_job'").fetchone() is None

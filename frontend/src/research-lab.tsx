@@ -1,7 +1,7 @@
 import React from 'react';
 import {Help} from './help';
 import {StrategyName} from './strategy-name';
-const number=(v:any)=>Number.isFinite(Number(v))?Number(v).toFixed(2):'—';
+const number=(v:any)=>v!=null&&Number.isFinite(Number(v))?Number(v).toFixed(2):'—';
 export function ResearchLabPanel({lab}:{lab:any}){
  if(!lab)return null;
  const reports=(lab.records??[]).filter((r:any)=>r.kind==='epoch_report');

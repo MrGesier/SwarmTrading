@@ -358,7 +358,7 @@ def test_incident_runs_brains_creates_challengers_and_records_reason(tmp_path, m
         captured = []
         original = supervisor.brains.curie.ask_json
         def capture(**kwargs):
-            captured.extend(r['measured_incident']['code'] for r in kwargs['context']['candidates'])
+            captured.append(kwargs['context']['incident']['code'])
             return original(**kwargs)
         monkeypatch.setattr(supervisor.brains.curie, 'ask_json', capture)
         result = supervisor.run_epoch()

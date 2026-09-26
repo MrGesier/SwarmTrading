@@ -1,6 +1,7 @@
 """Evidence-triggered batched research, persisted reports and matched shadow experiments."""
 from __future__ import annotations
 import hashlib
+import math
 import json
 import os
 import sqlite3
@@ -91,9 +92,14 @@ class ResearchLab:
             'hypothesis':{'type':'string'},'rationale':{'type':'string'},'confidence':{'type':'number','minimum':0,'maximum':1}},
             'required':['parent_id','parameter','factors','hypothesis','rationale','confidence']}
         fallback={'plans':[{'parent_id':sid,**p.to_dict()} for sid,p in defaults.items()],'summary':'Deterministic proposals; no LLM conclusion'}
+        metric_keys=('strategy_id','family','horizon','return_bps','pnl','fees','closed_trades','avg_holding_seconds','exit_reasons','turnover_x','max_drawdown_bps','multiple_test_pass')
+        compact_rows=[{k:r.get(k) for k in metric_keys} for r in ranked[:3]]
+        recent_ablations=[{k:r.get(k) for k in ('feature','start','end','status','delta_net_usd','interpretation')} for r in self.recent('ablation',4)]
         context={'questions':['Do fees consume gross edge?','Are holding durations and exit reasons appropriate?','What do matched indicator ablations show, and what remains unproven?'],
             'budget_priority':'incident' if incident.get('actionable') else 'routine',
-            'candidates':ranked[:3],'recent_ablations':self.recent('ablation',4),'lessons':lessons[:3]}
+            'incident':{k:incident.get(k) for k in ('code','mean_net_usd','mean_fees_usd','eligible')},
+            'candidates':compact_rows,'recent_ablations':recent_ablations,
+            'lessons':[{'kind':r.get('kind'),'payload':str(r.get('payload',''))[:600]} for r in lessons[:3]]}
         supervisor._emit('agent_started',{'task':'batched evidence review and controlled plans'},agent_id='curie')
         result=supervisor.brains.curie.ask_json(task='Review this evidence as one research batch: prioritize incidents, propose at most one permitted single-gene experiment per parent, explain falsifiable predictions and rejection criteria. Do not invent evidence or change code. Summarize unresolved questions.',
             context=context,schema_name='research_batch_v1',schema={'type':'object','additionalProperties':False,'properties':{'plans':{'type':'array','maxItems':3,'items':plan_schema},'summary':{'type':'string'}},'required':['plans','summary']},fallback=fallback)
@@ -103,7 +109,7 @@ class ResearchLab:
             seen=set()
             for p in result.data.get('plans',[]):
                 sid=p['parent_id']
-                if sid in defaults and sid not in seen:
+                if sid in defaults and sid not in seen and p.get('parameter') in MUTABLE_GENES and len(p.get('factors',[]))==2 and all(math.isfinite(float(v)) and .75<=float(v)<=1.25 for v in p['factors']) and math.isfinite(float(p['confidence'])):
                     defaults[sid]=ExperimentPlan(p['parameter'],tuple(p['factors']),p['hypothesis'],p['rationale'],p['confidence']);seen.add(sid)
         return defaults
 

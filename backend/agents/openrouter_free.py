@@ -93,15 +93,18 @@ class FreeProvider:
         try:
             models = self.models()
             if not model:
-                model = models[0]['id']
+                model = sorted(models,key=lambda m:(not m['structured'], 'cod' in m['id'].lower(),m['id']))[0]['id']
             if model not in {m['id'] for m in models}:
                 return result('unavailable', reason='Configured model is not in the current free catalogue')
         except Exception:
             return result('unavailable', reason='Free model catalogue unavailable')
-        payload = {"model":model, "max_tokens":2048,
+        payload = {"model":model, "max_tokens":8192,
                    "messages":[{"role":"system","content":system[:4000]},
                                {"role":"user","content":task[:4000]+"\nContext: "+json.dumps(context)[:12000]+"\nReturn only JSON matching: "+json.dumps(schema)}],
                    "provider":{"max_price":{"prompt":0,"completion":0},"allow_fallbacks":False}}
+        chosen=next(m for m in models if m['id']==model)
+        if chosen.get('structured'):
+            payload['response_format']={'type':'json_schema','json_schema':{'name':'darwin_research','strict':True,'schema':schema}}
         digest = hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -142,7 +145,9 @@ class FreeProvider:
             else:
                 response.raise_for_status()
                 raw=response.json()
-                data=json.loads(raw['choices'][0]['message']['content'])
+                content=raw['choices'][0]['message'].get('content')
+                if not isinstance(content,str) or not content.strip():raise ValueError('Empty model completion')
+                data=json.loads(content)
                 validate(data,schema)
                 usage=raw.get('usage',{})
                 output=result('connected',real_call=True,data=data,usage={k:usage.get(k) for k in ('prompt_tokens','completion_tokens','total_tokens')})
