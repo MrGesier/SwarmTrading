@@ -2,7 +2,6 @@
 from collections import deque
 import math
 import numpy as np
-from horizons import HorizonMemory, term_structure, selected_intent
 
 
 class SequenceGap(ValueError):
@@ -84,19 +83,12 @@ THRESHOLDS = np.array([g['threshold'] for g in GENOMES])
 
 class Engine:
     def __init__(self):
-        self.memory=HorizonMemory(HORIZONS)
-        self.local_history={h:deque(maxlen=120) for h in HORIZONS}
-        self.local_neff={h:None for h in HORIZONS}
-        self.local_weights={h:np.zeros(64) for h in HORIZONS}
-        self.local_timelines={h:deque(maxlen=60) for h in HORIZONS}
-        self.local_previous={h:'RISK_OFF' for h in HORIZONS}
-        self.local_pending={h:('',0) for h in HORIZONS}
         self.prices = deque(maxlen=900)
         self.trades = deque(maxlen=20000)
         self.signals = deque(maxlen=120)
         self.history = deque(maxlen=600)
         self.timeline = deque(maxlen=60)
-        self.candles = deque(maxlen=3600)
+        self.candles = deque(maxlen=180)
         self.previous = 'NEUTRAL'
         self.pending = None
         self.pending_count = 0
@@ -106,8 +98,7 @@ class Engine:
 
     def trade(self, timestamp, price, quantity, sell):
         self.trades.append((timestamp, price, quantity, -1 if sell else 1))
-        self.memory.trade(timestamp,quantity,sell)
-        bucket = int(timestamp)
+        bucket = int(timestamp // 5) * 5
         if not self.candles or self.candles[-1]['time'] != bucket:
             self.candles.append(dict(time=bucket, open=price, high=price, low=price, close=price, volume=quantity))
         else:
@@ -115,24 +106,14 @@ class Engine:
             c.update(high=max(c['high'], price), low=min(c['low'], price), close=price, volume=c['volume'] + quantity)
 
     def votes(self, features, price_bp=0, vol_scale=1, flow_delta=0):
-        local=features.get('horizon_states')
-        if local:
-            momentum=np.array([local[str(h)]['return_bps']+price_bp for h in HORIZONS])
-            norm=np.maximum(np.array([local[str(h)]['realized_vol'] for h in HORIZONS])*vol_scale,.5)
-            flow=np.clip(np.array([local[str(h)]['trade_flow'] for h in HORIZONS])+flow_delta,-1,1)
-            ofi=np.array([local[str(h)]['ofi_normalized'] for h in HORIZONS])
-            micro=np.array([local[str(h)]['microprice_pressure_mean']/max(local[str(h)]['spread_mean'],.01)*2 for h in HORIZONS])
-            pressure=np.array([local[str(h)]['book_imbalance_mean'] for h in HORIZONS])
-        else:  # Legacy feature fixtures and old research clients.
-            momentum=np.array([features['returns'][str(h)]+price_bp for h in HORIZONS])
-            norm=np.maximum(features['volatility']*np.sqrt(np.array(HORIZONS)*2)*vol_scale,.5)
-            flow=np.full(len(HORIZONS),np.clip(features['flow']+flow_delta,-1,1))
-            ofi=flow
-            micro=np.full(len(HORIZONS),features['micro_delta']/max(features['spread'],.01)*2)
-            pressure=np.full(len(HORIZONS),features['weighted_imbalance'])
-        raw=np.array([momentum/norm,-momentum/norm*.7,momentum/norm*(1+np.abs(flow)),
-                      momentum/np.maximum(norm,1),flow+ofi*.5,micro,pressure*1.7,
-                      momentum/norm*max(.2,vol_scale-.5)])
+        momentum = np.array([features['returns'][str(h)] + price_bp for h in HORIZONS])
+        norm = np.maximum(features['volatility'] * np.sqrt(np.array(HORIZONS) * 2) * vol_scale, .5)
+        flow = np.clip(features['flow'] + flow_delta, -1, 1)
+        raw = np.array([momentum/norm, -momentum/norm*.7, momentum/norm*(1+abs(flow)),
+                        momentum/np.maximum(norm,1), np.full(len(HORIZONS),flow*1.5),
+                        np.full(len(HORIZONS),features['micro_delta']/max(features['spread'],.01)*2),
+                        np.full(len(HORIZONS),features['weighted_imbalance']*1.7),
+                        momentum/norm*max(.2,vol_scale-.5)])
         ready = np.array([features.get('ready', {}).get(str(h), True) for h in HORIZONS])
         raw *= ready
         values = np.tanh(np.repeat(raw.ravel(),8)*GAINS)
@@ -168,25 +149,13 @@ class Engine:
                  bid_concentration=sum(q for _,q in bids[:5])/bq, ask_concentration=sum(q for _,q in asks[:5])/aq,
                  vacuum_up=max((asks[i+1][0]-asks[i][0])/mid*1e4 for i in range(len(asks)-1)) if len(asks)>1 else 0,
                  vacuum_down=max((bids[i][0]-bids[i+1][0])/mid*1e4 for i in range(len(bids)-1)) if len(bids)>1 else 0)
-        if not self.memory.books:self.memory.observe(book,ts)
-        local_features=self.memory.states(ts)
-        f['horizon_states']=local_features
-        f['ready']={h:v['ready'] for h,v in local_features.items()}
-        ready=f['ready']
         votes = self.votes(f)
         self.signals.append(votes.tolist())
         self.tick += 1
         if self.tick % 5 == 0:
             n, w = effective_count(self.signals)
             if w is not None:
-                self.neff = n
-        for h in HORIZONS:
-            ix=np.array([g['horizon']==h for g in GENOMES])
-            if ready[str(h)]:self.local_history[h].append(votes[ix].tolist())
-            if self.tick%5==0:
-                n,weights=effective_count(self.local_history[h])
-                if weights is not None:self.local_neff[h],self.local_weights[h]=n,weights
-            self.weights[ix]=self.local_weights[h] if ready[str(h)] else 0
+                self.neff, self.weights = n, w
         w = self.weights
         total = max(float(w.sum()), 1e-9)
         support = [float(w[votes < 0].sum()), float(w[votes == 0].sum()), float(w[votes > 0].sum())]
@@ -222,48 +191,18 @@ class Engine:
             families.append(dict(name=family, short=float(w[ix & (votes < 0)].sum()), neutral=float(w[ix & (votes == 0)].sum()),
                                  long=float(w[ix & (votes > 0)].sum()), consensus=float(np.dot(w[ix], votes[ix])/max(w[ix].sum(), 1e-9))))
         triggers = []
-        local_triggers={str(h):[] for h in HORIZONS}
         for bp in range(-30, 31, 2):
             projected = self.votes(f, price_bp=bp)
             flips = np.sign(projected) != np.sign(votes)
             price = mid * (1 + bp / 1e4)
             depth = sum(q for p, q in (asks if bp > 0 else bids) if min(mid, price) <= p <= max(mid, price))
             triggers.append(dict(bp=bp, price=price, density=float(w[flips].sum()), resistance=depth))
-            for h in HORIZONS:
-                mask=np.array([g['horizon']==h for g in GENOMES])
-                local_triggers[str(h)].append(dict(bp=bp,price=price,density=float(w[flips&mask].sum()),resistance=depth))
         horizon_consensus = {}
         for h in HORIZONS:
             ix = np.array([g['horizon']==h for g in GENOMES])
             horizon_consensus[str(h)] = float(np.dot(w[ix],votes[ix])/max(w[ix].sum(),1e-9))
-        horizons={}
-        for h in HORIZONS:
-            ix=np.array([g['horizon']==h for g in GENOMES]);lv=votes[ix];lw=w[ix]
-            sup=[float(lw[lv<0].sum()),float(lw[lv==0].sum()),float(lw[lv>0].sum())]
-            lf=local_features[str(h)]
-            horizons[str(h)]=dict(timestamp=ts,horizon_s=h,ready=ready[str(h)],features=lf,
-                swarm=dict(raw=64,active=int(np.count_nonzero(lv)),effective=self.local_neff[h],support=sup,
-                    consensus=horizon_consensus[str(h)],entropy=entropy(sup)),
-                entropy=dict(swarm=entropy(sup),market=lf['market_entropy'],price=lf['price_entropy'],
-                    trade=lf['flow_entropy'],book=lf['book_entropy'],slope=0),triggers=local_triggers[str(h)])
-        for h in HORIZONS:
-            loc=horizons[str(h)];entry=horizons[str(min(5,h))]
-            intent=selected_intent(loc,entry,health['status'])
-            pending,count=self.local_pending[h]
-            count=count+1 if pending==intent['state'] else 1
-            self.local_pending[h]=(intent['state'],count)
-            if intent['state']=='RISK_OFF' or count>=3:
-                if intent['state']!=self.local_previous[h]:
-                    self.local_timelines[h].appendleft(dict(time=ts,state=intent['state'],previous=self.local_previous[h],score=intent['score'],reasons=intent['reasons']))
-                self.local_previous[h]=intent['state']
-            intent['state']=self.local_previous[h]
-            loc['intent']=intent
-            loc['timeline']=list(self.local_timelines[h])
-        term=term_structure(horizons,self.history)
         row = dict(time=ts, mid=mid, consensus=consensus, horizon_consensus=horizon_consensus, market_entropy=hm, swarm_entropy=hs, slope=slope,
                    levels=[[p, q] for p, q in bids + asks])
-        row['term_structure']=term
-        row['horizon_metrics']={h:dict(market_entropy=v['entropy']['market'],swarm_entropy=v['entropy']['swarm'],effective=v['swarm']['effective'],ready=v['ready']) for h,v in horizons.items()}
         self.history.append(row)
         strategies = [{**g, 'signal':float(v), 'weight':float(ww)} for g, v, ww in zip(GENOMES, votes, w)]
         cone = []
@@ -272,7 +211,7 @@ class Engine:
             cone.append(dict(horizon=h, consensus=horizon_consensus[str(h)], ready=ready[str(h)],
                              remaining=max(0,round(h-elapsed))))
         return dict(timestamp=ts, mode=mode, symbol=symbol, venue='SIMULATOR' if mode == 'simulation' else 'BINANCE',
-                    horizons=horizons,term_structure=term,health=health, features=f, bids=bids[:20], asks=asks[:20], candles=[dict(c) for c in self.candles],
+                    health=health, features=f, bids=bids[:20], asks=asks[:20], candles=[dict(c) for c in self.candles],
                     history=list(self.history)[-180:], families=families, strategies=strategies, triggers=triggers, cone=cone,
                     entropy=dict(market=hm, swarm=hs, price=hp, book=hb, trade=ht, slope=slope),
                     swarm=dict(raw=len(votes), active=int(np.count_nonzero(votes)), effective=self.neff, support=support,

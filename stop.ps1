@@ -1,10 +1,11 @@
 $ErrorActionPreference = 'Stop'
-$projectRoot = $PSScriptRoot
-try {
-    $api = Invoke-RestMethod 'http://127.0.0.1:8000/api/health' -TimeoutSec 2
-    if ($api.project_root -eq $projectRoot) { Invoke-RestMethod -Method Post 'http://127.0.0.1:8000/api/flush' -TimeoutSec 15 | Out-Null }
-} catch { Write-Host 'Backend unavailable; checking local processes.' }
-$rootPattern = [regex]::Escape($projectRoot + '\backend')
-$owned = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match $rootPattern -and $_.CommandLine -match 'uvicorn|serve_ui\.py' }
-foreach ($process in $owned) { Stop-Process -Id $process.ProcessId -ErrorAction SilentlyContinue }
-Write-Host 'SwarmTrading stopped.'
+$projectRoot = [IO.Path]::GetFullPath($PSScriptRoot)
+$record = Join-Path $projectRoot 'data\runtime-pid.txt'
+if (-not (Test-Path -LiteralPath $record)) { Write-Host 'No managed runtime recorded.'; exit 0 }
+$runtimeId = [int](Get-Content -LiteralPath $record -Raw)
+$running = Get-Process -Id $runtimeId -ErrorAction SilentlyContinue
+if ($running) {
+    New-Item -ItemType File -Path (Join-Path $projectRoot "data\stop-$runtimeId") -Force | Out-Null
+    if (-not $running.WaitForExit(20000)) { throw "PID $runtimeId did not stop gracefully; inspect backend-error.log. No forced termination was performed." }
+}
+Write-Host 'SwarmTrade stopped.'

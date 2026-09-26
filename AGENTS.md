@@ -1,54 +1,86 @@
-# AGENTS.md — SwarmTrading implementation contract
+# SwarmTrade Darwin — Agent Engineering Contract (V0.11)
 
-## Mission
+This repository is an evolutionary **paper-trading research system**. Treat the following boundaries as hard requirements.
 
-Build an explainable multi-scale market-intent research terminal. Preserve the strong V0.2 UX while progressively replacing shared/instantaneous heuristics with horizon-specific market states and empirically calibrated forecasts.
+## Architecture
 
-## Non-negotiable principles
+- ATLAS: research supervisor. OpenAI advisory reasoning only.
+- CURIE: research scientist. OpenAI advisory reasoning only.
+- EVOLVE: bounded strategy mutation designer. OpenAI advisory reasoning only.
+- FORGE: deterministic paper accounting/fills/PnL. Do not replace authoritative calculations with model output.
+- JUDGE: deterministic numerical RETEST/KEEP/KILL/SCALE authority. LLM critique is commentary only.
+- MNEMOSYNE: research-memory summarization. Source evidence remains the database.
+- CERBERUS: deterministic risk gate. Model output may never bypass it.
+- HERMES: deterministic exchange adapter. Disabled by default.
+- CODEX ENGINEER: software engineer outside the trading/capital path.
 
-1. **Chart interval != prediction horizon != context horizon.** Never conflate them in APIs or UI state.
-2. **No fake independence.** Strategy counts must be decorrelated; report raw N and effective N separately.
-3. **No fake probabilities.** Values labelled probability/confidence must be calibrated out-of-sample. Heuristic scores must be labelled as scores.
-4. **No look-ahead.** Live and replay paths must use only information available at that timestamp.
-5. **No silent data degradation.** Stale or inconsistent books force RISK_OFF/LOW_CONFIDENCE.
-6. **Direction and execution are separate decisions.** A 3m LONG thesis can coexist with a poor 5s entry state.
-7. **Contradiction is signal.** Do not average away disagreements across horizons/families/venues.
-8. **Costs matter.** Any claimed alpha must survive spread, fees, slippage and adverse-selection assumptions.
-9. **Research first.** Keep authenticated order execution out of scope until paper/replay validation is convincing.
-10. **Preserve explainability.** Every material state transition must expose the dominant contributing evidence and invalidation conditions.
+## Hard safety invariants
 
-## Current stack
+1. Never enable `HYPERLIQUID_ENABLED` or mainnet execution as part of an engineering task.
+2. Never weaken CERBERUS hard limits, stale-feed blocks, or execution acknowledgements without explicit human instruction.
+3. Never expose, log, copy, print, commit, or move private keys/API secrets.
+4. Never use LLM prose as authoritative PnL, fills, drawdown, fees, benchmark, or JUDGE selection data.
+5. Never let a research model directly submit an exchange order.
+6. Do not auto-merge, auto-deploy, or auto-apply Codex-generated changes from inside Darwin.
+7. Preserve paper-only defaults and statistical guardrails unless the user explicitly asks to change them.
 
-- Backend: Python + FastAPI + asyncio
-- Frontend: React + TypeScript
-- Live public data: Binance spot depth/trades/book ticker
-- Storage: Parquet event capture
-- Modes: deterministic simulation, live read-only, replay
+## Required validation after code changes
 
-## V0.3 implementation order
+Backend:
 
-1. Add `HorizonState` and horizon-specific feature histories.
-2. Rebuild flow/OFI/book/entropy features per horizon.
-3. Split display interval from forecast horizon in frontend and API.
-4. Compute local swarm entropy / local effective N per horizon.
-5. Add consensus term structure `C(h,t)`.
-6. Add horizon x time propagation heatmap and propagation-front state.
-7. Replace global selected intent with horizon-specific LONG/SHORT/NO-TRADE output contract.
-8. Add direction-vs-entry state machine.
-9. Add triple-barrier research labels and chronological calibration pipeline.
-10. Only then add derivatives / cross-venue / options / news context.
+```bash
+python -m pytest backend/test_darwin.py backend/test_engine.py backend/test_analysis.py -q
+```
 
-## Validation before merging model changes
+Frontend:
 
-- backend tests pass
-- frontend build passes
-- chronological walk-forward test or documented reason why not yet applicable
-- no future-data leakage in replay
-- ablation for newly claimed predictive features
-- explicit label when a feature is heuristic or uncalibrated
+```bash
+cd frontend
+npm ci
+npm run build
+```
 
-## Read first
+Smoke endpoints when the app is running:
 
-- `README.md`
-- `docs/V0.2_PRODUCT_SPEC.md`
-- `docs/V0.3_MULTISCALE_ALPHA.md`
+- `/api/health`
+- `/api/brains/state`
+- `/api/darwin/research`
+- `/api/factory/state`
+- `/api/engineer/state`
+
+## Preferred workflow
+
+- Make bounded, reviewable changes.
+- Add or update tests for behavioral changes.
+- Preserve lineage and experiment reproducibility.
+- Prefer explicit schemas/config over hidden prompt-only behavior.
+- Keep research, capital authority, and software engineering as separate planes.
+- If a requested change would cross a capital/execution boundary, stop and surface that fact rather than silently doing it.
+
+## OpenBot bridge (V0.11)
+
+`CopilotKit/OpenBot` is an optional coworker/orchestration plane. It is not an execution authority.
+
+- AG-UI coworkers: ATLAS, CURIE, EVOLVE, MNEMOSYNE only.
+- Keep FORGE/JUDGE/CERBERUS/HERMES authoritative behavior inside Darwin.
+- OpenBot actions must remain advisory/read-only with respect to capital.
+- Do not expose exchange credentials, order submission or risk-limit mutation as OpenBot tools.
+- `OPENBOT_AGENT_TOKEN` is a secret and must never be committed or printed.
+- See `OPENBOT_BRIDGE.md` and `openbot/swarmtrade-tenant/`.
+
+
+## Genome V2 invariant (V0.11)
+
+- `backend/darwin/genome.py` owns gene semantics and hard bounds.
+- CURIE changes one permitted gene per experiment.
+- EVOLVE may alter factors, never gene semantics/bounds.
+- FORGE remains authoritative for paper positions and accounting.
+- New genes must be paper-tested and persisted before any consideration of external execution.
+
+## Evolution Observatory invariant (V0.11)
+
+- `/api/darwin/evolution` is descriptive research telemetry, never an execution signal.
+- Do not feed `research_quality_index`, `trend`, or `confidence` into HERMES/CERBERUS order approval.
+- Preserve the individual components (alpha, evidence, fee stress, drawdown, multiple-testing evidence) even if the visualization changes.
+- If the Research Quality formula changes, version/document the formula so historical comparisons are not silently reinterpreted.
+- `IMPROVING` means improving paper-research metrics only; UI copy must not call it a prediction of future profit.

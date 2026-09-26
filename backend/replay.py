@@ -1,47 +1,70 @@
-"""Rebuild derived states from raw Parquet events using the live Engine.
+"""Rebuild derived states from raw recorder events using the live Engine.
 
-Usage: python replay.py ../data/<recording-id> --output ../data/replayed.jsonl
+Supports Parquet when pyarrow is installed and JSONL fallback recordings when it
+is not. Usage: python replay.py ../data/<recording-id> --output replayed.jsonl
 """
 import argparse
 import json
 from pathlib import Path
-import pyarrow.parquet as pq
+from typing import Iterable
+
+try:
+    import pyarrow.parquet as pq
+except ImportError:
+    pq = None
+
 from engine import Engine, OrderBook, SequenceGap
 
 
+def _rows(directory: Path) -> Iterable[dict]:
+    parquet = sorted(directory.glob('*.parquet'))
+    jsonl = sorted(directory.glob('*.jsonl'))
+    if parquet and pq is None:
+        raise RuntimeError('This recording is Parquet; install pyarrow to replay it.')
+    for file in parquet:
+        assert pq is not None
+        for batch in pq.ParquetFile(file).iter_batches():
+            yield from batch.to_pylist()
+    for file in jsonl:
+        with file.open('r', encoding='utf-8') as handle:
+            for line in handle:
+                line = line.strip()
+                if line:
+                    yield json.loads(line)
+
+
 def replay_events(directory):
+    directory = Path(directory)
     book, engine = OrderBook(), Engine()
     mode, symbol = directory.name.split('-')[:2]
     last_depth = 0
-    for file in sorted(directory.glob('*.parquet')):
-        for batch in pq.ParquetFile(file).iter_batches():
-            for row in batch.to_pylist():
-                ts, event = row['received'], json.loads(row['payload'])
-                kind = event['type']
-                if kind == 'reset':
-                    book,engine=OrderBook(),Engine()
-                    last_depth=0
-                elif kind == 'snapshot':
-                    book.snapshot(event['data'])
-                    engine.memory.observe(book,ts)
+    for row in _rows(directory):
+        ts, event = row['received'], json.loads(row['payload'])
+        kind = event['type']
+        if kind == 'reset':
+            book, engine = OrderBook(), Engine()
+            last_depth = 0
+        elif kind == 'snapshot':
+            book.snapshot(event['data'])
+            last_depth = ts
+        elif kind == 'depth':
+            try:
+                if book.update(event['data']):
                     last_depth = ts
-                elif kind == 'depth':
-                    try:
-                        if book.update(event['data']):
-                            last_depth = ts
-                            engine.memory.observe(book,ts)
-                    except SequenceGap:
-                        book.valid = False
-                elif kind == 'trade':
-                    d = event['data']
-                    engine.trade(ts, float(d['p']), float(d['q']), d['m'])
-                elif kind == 'clock':
-                    book.valid = event['valid']
-                    health = dict(status='HEALTHY' if book.valid and ts-last_depth < 3 and event['health']=='HEALTHY' else 'STALE',
-                                  age_ms=round((ts-last_depth)*1000), sequence=book.sequence, message='', recording=directory.name)
-                    state = engine.calculate(book, ts, mode, symbol, health)
-                    if state:
-                        yield state
+            except SequenceGap:
+                book.valid = False
+        elif kind == 'trade':
+            d = event['data']
+            engine.trade(ts, float(d['p']), float(d['q']), d['m'])
+        elif kind == 'clock':
+            book.valid = event['valid']
+            health = dict(
+                status='HEALTHY' if book.valid and ts-last_depth < 3 and event['health'] == 'HEALTHY' else 'STALE',
+                age_ms=round((ts-last_depth)*1000), sequence=book.sequence, message='', recording=directory.name,
+            )
+            state = engine.calculate(book, ts, mode, symbol, health)
+            if state:
+                yield state
 
 
 if __name__ == '__main__':
