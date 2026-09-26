@@ -382,6 +382,13 @@ class DarwinSupervisor:
             repair_rows = sorted((r for r in evaluations if r["strategy_id"] in affected and r.get("eligible")),
                                  key=lambda r: r["pnl"])
             ranked = list({r["strategy_id"]: r for r in repair_rows[:3] + ranked}.values())[:6]
+        capital_feedback = getattr(self, "portfolio_feedback", lambda: {})()
+        capital_loss_ids = {sid.split(":", 1)[-1]
+                            for cell in capital_feedback.get("family_evidence", []) if cell["status"] == "REDUCED_LOSSES"
+                            for sid in cell.get("affected_ids", [])}
+        capital_repairs = sorted((r for r in evaluations if r["strategy_id"] in capital_loss_ids and r.get("eligible")),
+                                 key=lambda r: r["pnl"])
+        ranked = list({r["strategy_id"]: r for r in capital_repairs[:3] + ranked}.values())[:6]
         for candidate in ranked:
             candidate["measured_incident"] = self._repair_diagnosis
         def diverse(ids: list[str]) -> list[str]:
@@ -656,6 +663,14 @@ class DarwinSupervisor:
             "status_counts": statuses,
             "champion": champion,
             "leaderboard": rows[:25],
+            "capital_tracking": {
+                "currency": "USD", "scope": "independent_strategy_current_epoch",
+                "open_positions": sum(r["position"] != 0 for r in rows),
+                "long_positions": sum(r["position"] > 0 for r in rows),
+                "short_positions": sum(r["position"] < 0 for r in rows),
+                "closed_trades": sum(r["closed_trades"] for r in rows),
+                "accounts": rows,
+            },
             "recent_trades": self.store.recent_trades(),
             "trade_history_note": "Journal available only since trade logging was installed; last 10000 closes retained. Older individual trades cannot be reconstructed from epoch totals.",
             "cycle": self.cycle_state(rows),

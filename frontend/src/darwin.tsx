@@ -1,3 +1,4 @@
+import { SharedPortfolioPanel, type SharedPortfolioState } from "./portfolio";
 import { StrategyName, shortStrategy } from "./strategy-name";
 import { Help } from "./help";
 import React, { useCallback, useEffect, useState } from "react";
@@ -88,7 +89,10 @@ type LlmUsage = {
   estimated_cost_usd?: number;
 };
 
+type CapitalAccount = Leader & {reference_notional_usd:number;reference_equity_usd:number;closed_net_pnl_usd:number;open_net_pnl_usd:number;position_notional_usd:number;quantity:number;opened_at:number|null;entry_mid:number|null;marked_at:number|null;started_at:number|null};
 type DarwinState = {
+  shared_portfolio?: SharedPortfolioState;
+  capital_tracking?: {currency:string;open_positions:number;long_positions:number;short_positions:number;closed_trades:number;accounts:CapitalAccount[]};
   symbol: string;
   mode: string;
   population: number;
@@ -176,6 +180,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
   const [execution, setExecution] = useState<ExecutionState | null>(null);
   const [agents, setAgents] = useState<AgentsState | null>(null);
   const [strategyDetail, setStrategyDetail] = useState<StrategyDetail | null>(null);
+  const [capitalId, setCapitalId] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -226,6 +231,8 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
 
   if (!state) return <div className="darwin-loading"><RefreshCw size={18} /> Initializing Darwin population…</div>;
 
+  const capital = state.capital_tracking;
+  const capitalAccount = capital?.accounts.find(a=>a.strategy_id===capitalId) ?? capital?.accounts.find(a=>a.strategy_id===state.champion?.id) ?? capital?.accounts[0];
   const championMetric = state.champion ? state.leaderboard.find((r) => r.strategy_id === state.champion?.id) : null;
   const usage = research?.llm_usage_24h ?? state.llm_usage_24h;
   const experiments = research?.experiments ?? state.experiments ?? [];
@@ -236,7 +243,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
         <div>
           <span className="eyebrow"><Dna size={14} /> EVOLUTION ENGINE · V0.11 OPENAI BRAIN + OPENBOT</span>
           <h2>Résultats et activité paper</h2>
-          <p>Chaque stratégie possède un compte simulé indépendant. Les résultats incluent les frais modélisés ; la sélection et les mutations se suivent dans Factory.</p>
+          <p>Le portefeuille commun engage les allocations paper. Le laboratoire compare séparément les stratégies ; ses résultats ne sont pas le capital du portefeuille.</p>
         </div>
         <div className="judge-auto-note"><b>{state.auto_epoch_enabled?"JUDGE automatique activé":"JUDGE automatique désactivé"}</b><small>La sélection se déclenche à l’échéance si les preuves sont suffisantes.</small><details><summary>Commande manuelle facultative</summary><button onClick={runJudge} disabled={busy}><BrainCircuit size={16} /> {busy ? "Sélection…" : "Anticiper le cycle maintenant"}</button></details></div>
       </div>
@@ -258,12 +265,30 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
         <div className="agent-safety-note"><ShieldCheck size={15} /> ATLAS/CURIE/EVOLVE/MNEMOSYNE reason with OpenAI; JUDGE is hybrid. FORGE/CERBERUS/HERMES remain deterministic authority code.</div>
       </section>}</details>
 
+      {state.shared_portfolio && <SharedPortfolioPanel p={state.shared_portfolio}/>}
       <div className="darwin-kpis">
-        <div><small>STRATÉGIES PAPER</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER ?? 0} challengers · {state.historical_population} ever created</span></div>
+        <div><small>STRATÉGIES EN LABORATOIRE</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER ?? 0} challengers · {state.historical_population} ever created</span></div>
         <div><small>CHAMPION</small><b className="positive">{state.champion ? <StrategyName id={state.champion.id}/> : "No promotion yet"}</b><span>{championMetric ? `${signed(championMetric.return_bps, 1)} bp · evidence ${pct(championMetric.evidence_weight)}` : "Waiting for sufficient evidence"}</span></div>
-        <div><small>CAPITAL SIMULÉ / STRATÉGIE</small><b>${fmt(state.paper.notional_usd, 0)}</b><span>{fmt(state.paper.fee_bps, 1)} bp / fill</span></div>
+        <div><small>RÉFÉRENCE DU LABORATOIRE / STRATÉGIE</small><b>${fmt(state.paper.notional_usd, 0)}</b><span>{fmt(state.paper.fee_bps, 1)} bp / fill</span></div>
         <div><small>PROCHAINE SÉLECTION</small><b>{duration(state.cycle?.seconds_remaining ?? Math.max(0, state.epoch_seconds - state.seconds_since_epoch))}</b><span>{state.cycle?.trigger==="AUTO_REPAIR"?"Cycle anticipé : problème détecté":`Cycle normal ${duration(state.epoch_seconds)}`}</span></div>
       </div>
+
+      {capital && <details className="advanced-panel"><summary>Comptes indépendants du laboratoire · hors portefeuille commun</summary><section className="darwin-card" aria-label="Suivi du capital paper">
+        <div className="darwin-card-head"><h3>Capital et positions paper</h3><span>USD · cycle actuel</span></div>
+        <p className="panel-note">Chaque stratégie dispose d’un nominal de référence indépendant de {fmt(state.paper.notional_usd,0)} USD. Ce n’est ni un dépôt en euros, ni un portefeuille commun. Les résultats repartent à zéro au changement de cycle.</p>
+        <div className="darwin-kpis">
+          <div><small>POSITIONS OUVERTES · TOUTES STRATÉGIES</small><b>{capital.open_positions}</b><span>{capital.long_positions} longs · {capital.short_positions} shorts</span></div>
+          <div><small>TRADES CLÔTURÉS · CYCLE</small><b>{capital.closed_trades}</b><span>Comptes indépendants, sans additionner leurs capitaux</span></div>
+        </div>
+        <label>Compte à suivre <select aria-label="Compte paper à suivre" value={capitalAccount?.strategy_id??""} onChange={e=>setCapitalId(e.target.value)}>{capital.accounts.map(a=><option key={a.strategy_id} value={a.strategy_id}>{shortStrategy(a.strategy_id)} · {a.position>0?"Long":a.position<0?"Short":"Sans position"}</option>)}</select></label>
+        {capitalAccount && <><div className="darwin-kpis">
+          <div><small>BASE DE RÉFÉRENCE</small><b>{fmt(capitalAccount.reference_notional_usd)} USD</b><span>Nominal fixe, pas une marge disponible</span></div>
+          <div><small>VALEUR DE RÉFÉRENCE ACTUELLE <Help label="Valeur de référence" text="Nominal initial + PnL net clôturé + PnL net de la position ouverte. Indicateur de suivi, pas un solde de wallet ni un montant retirable."/></small><b>{fmt(capitalAccount.reference_equity_usd)} USD</b><span>{signed(capitalAccount.return_bps/100)} % sur le cycle</span></div>
+          <div><small>PNL CLÔTURÉ NET</small><b>{signed(capitalAccount.closed_net_pnl_usd)} USD</b><span>{capitalAccount.closed_trades} trades clôturés</span></div>
+          <div><small>PNL POSITION EN COURS</small><b>{signed(capitalAccount.open_net_pnl_usd)} USD</b><span>Frais déjà payés inclus ; frais de sortie futurs exclus</span></div>
+        </div><p className="panel-note">Frais déjà déduits : {fmt(capitalAccount.fees)} USD · valorisation : {capitalAccount.marked_at?new Date(capitalAccount.marked_at*1000).toLocaleString():"en attente"}. Funding et impact réel non modélisés.</p></>}
+        <details><summary>Voir les {capital.open_positions} positions ouvertes</summary><div className="darwin-table-wrap"><table className="darwin-table"><thead><tr><th>Stratégie</th><th>Sens</th><th>Ouverture</th><th>Nominal exposé USD</th><th>PnL en cours USD</th></tr></thead><tbody>{capital.accounts.filter(a=>a.position!==0).map(a=><tr key={a.strategy_id}><td><button onClick={()=>setCapitalId(a.strategy_id)}><StrategyName id={a.strategy_id}/></button></td><td>{a.position>0?"Long":"Short"}</td><td>{a.opened_at?new Date(a.opened_at*1000).toLocaleString():"—"}</td><td>{fmt(a.position_notional_usd)}</td><td>{signed(a.open_net_pnl_usd)}</td></tr>)}</tbody></table></div>{capital.open_positions===0&&<p>Aucune position ouverte actuellement.</p>}</details>
+      </section></details>}
 
       <details className="advanced-panel"><summary>Diagnostics de sélection et budget IA</summary><section className="research-cockpit">
         <div className="darwin-card-head"><span><FlaskConical size={16} /> Research cockpit</span><small>evidence before narrative</small></div>

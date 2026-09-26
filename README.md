@@ -391,3 +391,42 @@ liquidations, all failure modes, HIP-3/subaccount aggregation, profitability or
 mainnet readiness. The funding rate is displayed, not added to existing paper
 accounting. Mainnet activation remains a separate human decision; this panel
 cannot enable it. Software test doubles are not claimed as exchange validation.
+
+
+### Capital et positions paper
+
+Dans **Recherche et trades → Capital et positions paper**, le compteur couvre toutes les stratégies actives, pas seulement les 25 premières du classement. Choisir un compte permet de suivre son nominal de référence, sa valeur de référence actuelle, les résultats nets des épisodes clôturés et de la position en cours, ainsi que les frais déjà déduits. Le détail des positions indique le sens, l'ouverture et le nominal exposé.
+
+La base par défaut est **1 000 USD par stratégie indépendante**, pas 1 000 EUR et pas une enveloppe partagée. La valeur de référence est `nominal + PnL clôturé net + PnL de l'épisode ouvert net`. Elle n'est ni le cash comptable, ni une marge disponible, ni le solde d'un wallet. Les clôtures partielles restent dans l'épisode ouvert jusqu'à sa clôture complète. Les frais futurs de sortie, le funding et l'impact réel ne sont pas inclus. Le nominal de trading reste fixe : les profits ne sont pas automatiquement réinvestis.
+
+Les comptes repartent à zéro au changement de cycle. Le journal des clôtures et les comparaisons de cycles sont conservés séparément ; cette vue ne prétend pas représenter un capital cumulé depuis le premier lancement. Un portefeuille commun en EUR nécessiterait une comptabilité et une allocation distinctes.
+
+
+### Portefeuille commun Darwin — 1 000 EUR (paper)
+
+La vue principale **Recherche et trades** affiche désormais un portefeuille unique de 1 000 EUR, commun à BTC, ETH, SOL et à la paire HYPE spot/perp. Son fichier `data/shared-portfolio-v1.json` conserve capital, allocations, frais, funding estimé et journal ; un cycle de recherche ne le remet jamais à zéro. Les anciens comptes indépendants de 1 000 USD sont les témoins du laboratoire, repliés dans un panneau distinct : ils ne sont pas additionnés au portefeuille.
+
+L'allocateur déterministe accepte jusqu'à 18 allocations directionnelles, une par famille et marché, avec un nominal de 100 EUR maximum et 10 % de l'equity par entrée. Les génomes actifs et leurs descendants fournissent les signaux. La politique est figée pour la durée d'une allocation ; un génome retiré est clôturé lorsque le carnet est frais. Le minimum de détention de 60 secondes ne s'applique pas aux stops, à la durée maximum ni aux sorties de risque. La recherche peut créer de nombreuses stratégies ; elles ne reçoivent pas toutes une allocation simultanément.
+
+Une stratégie supplémentaire de delta neutral porte une quantité identique de **HYPE spot long / HYPE perp short**. La paire spot USDC est découverte via `spotMeta` (pas de token enveloppé assimilé arbitrairement à BTC). Allocation maximale 250 EUR par jambe et 25 % de l'equity. Entrée si le funding observé est positif et le basis exécutable est au moins 30 bp ; ce seuil est une hypothèse paper, pas une promesse de profit. Sortie après 24 h au maximum, funding négatif après 5 minutes, perte nette marquée de 10 EUR ou dépassement de risque. Les deux jambes doivent avoir assez de profondeur ; leur quantité respecte le plus strict des `szDecimals`. La paire est atomique dans ce modèle paper seulement : un routeur réel devrait traiter explicitement les exécutions partielles et le risque de jambe.
+
+**Capital/risk:** spot payé comptant ; marge perp réservée à 3× ; exposition brute de toutes les jambes <= 3× equity après coûts à l'entrée. Le netting ne permet pas de contourner ce plafond. Un dépassement dû aux prix ou au funding entraîne une tentative de réduction sur le prochain carnet frais, sans garantir un plafond instantané pendant une interruption de données. Aucune vente spot à découvert. Fraîcheur maximale 3 secondes. Les volumes visibles sont consommés par les allocations du même snapshot. Les positions par stratégie sont des allocations virtuelles ; Hyperliquid n'offre pas ici un compte hedge séparé par stratégie et une exécution exchange devrait rapprocher la position nette par instrument.
+
+**Devise/coûts:** change EUR/USD de référence BCE récupéré au premier lancement puis figé et daté ; USDC/USD supposé à parité. Les variations du change et du stablecoin ne sont pas modélisées. Frais taker de base perp 4,5 bp / spot 7 bp par fill, sans remises, distincts du laboratoire historique à 3,5 bp. Funding proratisé à partir du taux horaire public récent ; le temps hors couverture (arrêt du PC, taux périmé) est exposé, pas inventé. Cela ne remplace pas les règlements horaires exacts d'un compte Hyperliquid. Pas de simulation de liquidation, file d'attente ou impact propre sur le marché.
+
+**Gamma:** pas de moteur d'options ni de grecques. Un couple de produits linéaires n'est pas présenté comme une stratégie active de gamma neutral. Le module utilise uniquement les carnets Hyperliquid spot/perp publics ; il n'a aucun accès à une clé ni à `/exchange`. Le trading réel reste désactivé.
+
+Sources : [Hyperliquid spot API](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/spot), [frais](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees), [funding](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/funding), [BCE EUR/USD](https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml).
+
+La liaison spot/perp vérifie les timestamps de l'exchange et de réception : un timestamp exchange en avance de moins de deux secondes est borné à la réception locale ; une avance supérieure est rejetée. La limite de fraîcheur reste trois secondes. Le portefeuille commun est actuellement limité aux données publiques mainnet ; cette sélection n'active aucune exécution mainnet.
+
+Les nouvelles allocations directionnelles attendent 15 secondes de flux sain hors RISK_OFF et respectent les confirmations du génome. Une famille/market doit patienter 60 secondes après clôture, même si une autre variante demande l'entrée ; le cooldown du génome est appliqué s'il est plus long. Ces contraintes réduisent le churn sans désactiver les sorties de sécurité.
+
+
+### Boucle de capital mesurée
+
+Le portefeuille adapte maintenant le budget directionnel par famille/marché à partir de ses propres clôtures nettes : 50 % du budget de base en exploration, 25 % si au moins cinq clôtures récentes cumulent une perte, jusqu'à 100 % après vingt clôtures couvrant au moins trente minutes avec un résultat encore positif sous frais majorés de 50 %. Fenêtre glissante 24 h, vingt dernières clôtures par groupe ; les familles réduites continuent à petite taille, sans augmentation du plafond global 3×. Les pertes ne sont jamais effacées. Ce mécanisme n'est ni une preuve statistique ni une promesse de rendement.
+
+Les événements d'allocation sont persistés et affichés dans « La boucle améliore-t-elle le capital ? ». Les familles perdantes et les IDs affectés alimentent le prochain lot CURIE et priorisent les parents admissibles aux expériences. La cadence et les quotas LLM existants restent inchangés. Les plans sont toujours des expériences à un gène, validées par le code ; le LLM ne décide ni du solde ni d'un ordre.
+
+Un témoin virtuel à allocation fixe est créé une seule fois à partir de l'état exact du portefeuille au début du comparatif, puis suit les mêmes données, génomes évolutifs, contraintes et modèle de coûts. `data/shared-portfolio-control-v1.json` n'est pas du capital supplémentaire. La différence mesure uniquement la politique d'allocation, pas l'effet causal de l'ensemble des mutations. Le bilan reste « collecte » avant trente minutes et dix clôtures de chaque côté ; un capital encore en baisse malgré un écart positif au témoin est explicitement distingué d'un gain absolu. Un témoin absent ou incompatible bloque la comparaison au lieu de redémarrer silencieusement les preuves.

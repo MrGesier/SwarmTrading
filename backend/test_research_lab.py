@@ -33,10 +33,13 @@ def test_batch_deduplicates_evidence_and_uses_one_call(tmp_path):
     lab=ResearchLab(tmp_path/'lab.sqlite')
     supervisor=SimpleNamespace(scientist=ScientistAgent(),_repair_diagnosis={'code':'FEE_DRAG','actionable':True},
         brains=SimpleNamespace(curie=SimpleNamespace(ask_json=ask)),_emit=lambda *a,**kw:None,_remember_agent=lambda *a:None)
+    supervisor.portfolio_feedback=lambda: {'equity_eur':972,'family_evidence':[]}
     rows=[dict(strategy_id='a',family='Momentum',horizon=5,turnover_x=20,return_bps=-100,closed_trades=30)]
     assert lab.batch(supervisor,rows,[])['a'].parameter=='cooldown_seconds'
     lab.batch(supervisor,rows,[])
     assert len(calls)==1
+    assert calls[0]['context']['shared_portfolio']['equity_eur']==972
+    assert lab.recent('batch')[0]['portfolio_feedback']['equity_eur']==972
     assert len(lab.recent('deferred'))==1
     # Restart does not spend a second call for unchanged data.
     ResearchLab(tmp_path/'lab.sqlite').batch(supervisor,rows,[])

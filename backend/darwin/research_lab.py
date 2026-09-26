@@ -72,8 +72,9 @@ class ResearchLab:
         defaults={r['strategy_id']:supervisor.scientist.plan(r,lessons) for r in ranked[:3]}
         if not ranked:return defaults
         incident=supervisor._repair_diagnosis
+        portfolio=getattr(supervisor,"portfolio_feedback",lambda: {})()
         # Quantized economic evidence avoids new questions from timestamps or ever-growing IDs.
-        digest=hashlib.sha256(json.dumps({'incident':incident.get('code'), 'cells':sorted(
+        digest=hashlib.sha256(json.dumps({'portfolio':[(r['group'],r['status'],r['trades']//5) for r in portfolio.get('family_evidence',[])], 'incident':incident.get('code'), 'cells':sorted(
             (r['family'],r['horizon'],round(float(r.get('return_bps',0))/50),round(float(r.get('turnover_x',0))/10),int(r.get('closed_trades',0))//20)
             for r in ranked[:3]),'ablation_ids':[r['id'] for r in self.recent('ablation',4)]},sort_keys=True).encode()).hexdigest()
         now=time.time()
@@ -95,7 +96,7 @@ class ResearchLab:
         metric_keys=('strategy_id','family','horizon','return_bps','pnl','fees','closed_trades','avg_holding_seconds','exit_reasons','turnover_x','max_drawdown_bps','multiple_test_pass')
         compact_rows=[{k:r.get(k) for k in metric_keys} for r in ranked[:3]]
         recent_ablations=[{k:r.get(k) for k in ('feature','start','end','status','delta_net_usd','interpretation')} for r in self.recent('ablation',4)]
-        context={'questions':['Do fees consume gross edge?','Are holding durations and exit reasons appropriate?','What do matched indicator ablations show, and what remains unproven?'],
+        context={'shared_portfolio':portfolio,'questions':['Do fees consume gross edge?','Are holding durations and exit reasons appropriate?','What do matched indicator ablations show, and what remains unproven?','Which single-gene candidate could improve shared-portfolio net capital, and what future evidence would reject it?'],
             'budget_priority':'incident' if incident.get('actionable') else 'routine',
             'incident':{k:incident.get(k) for k in ('code','mean_net_usd','mean_fees_usd','eligible')},
             'candidates':compact_rows,'recent_ablations':recent_ablations,
@@ -104,7 +105,7 @@ class ResearchLab:
         result=supervisor.brains.curie.ask_json(task='Review this evidence as one research batch: prioritize incidents, propose at most one permitted single-gene experiment per parent, explain falsifiable predictions and rejection criteria. Do not invent evidence or change code. Summarize unresolved questions.',
             context=context,schema_name='research_batch_v1',schema={'type':'object','additionalProperties':False,'properties':{'plans':{'type':'array','maxItems':3,'items':plan_schema},'summary':{'type':'string'}},'required':['plans','summary']},fallback=fallback)
         supervisor._remember_agent('curie',result)
-        self.record('batch',{'digest':digest,'audit':result.audit,'ok':result.ok,'summary':result.data.get('summary'),'plans':result.data.get('plans',[]),'error':result.error})
+        self.record('batch',{'portfolio_feedback':portfolio,'digest':digest,'audit':result.audit,'ok':result.ok,'summary':result.data.get('summary'),'plans':result.data.get('plans',[]),'error':result.error})
         if result.ok:
             seen=set()
             for p in result.data.get('plans',[]):
