@@ -382,6 +382,13 @@ class DarwinSupervisor:
             repair_rows = sorted((r for r in evaluations if r["strategy_id"] in affected and r.get("eligible")),
                                  key=lambda r: r["pnl"])
             ranked = list({r["strategy_id"]: r for r in repair_rows[:3] + ranked}.values())[:6]
+        capital_feedback = getattr(self, "portfolio_feedback", lambda: {})()
+        capital_loss_ids = {sid.split(":", 1)[-1]
+                            for cell in capital_feedback.get("family_evidence", []) if cell["status"] == "REDUCED_LOSSES"
+                            for sid in cell.get("affected_ids", [])}
+        capital_repairs = sorted((r for r in evaluations if r["strategy_id"] in capital_loss_ids and r.get("eligible")),
+                                 key=lambda r: r["pnl"])
+        ranked = list({r["strategy_id"]: r for r in capital_repairs[:3] + ranked}.values())[:6]
         for candidate in ranked:
             candidate["measured_incident"] = self._repair_diagnosis
         def diverse(ids: list[str]) -> list[str]:

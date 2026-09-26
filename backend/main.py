@@ -28,6 +28,7 @@ from engine import Engine, OrderBook, GENOMES, HORIZONS, SequenceGap
 from analysis import technical_analysis, cost_preview
 from darwin import DarwinSupervisor
 from darwin.portfolio import SharedPortfolio
+from darwin.capital_feedback import start_comparison, comparison
 from marketdata.portfolio_service import PortfolioFeeds
 from execution.hyperliquid import HyperliquidExecutor
 from agents import agent_runtime_state, policy_state
@@ -42,7 +43,8 @@ DATA = Path(os.getenv('DARWIN_DATA_DIR', DEFAULT_DATA_DIR))
 DATA.mkdir(parents=True, exist_ok=True)
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
 shared_portfolio = SharedPortfolio(DATA / 'shared-portfolio-v1.json')
-portfolio_feeds = PortfolioFeeds(shared_portfolio)
+fixed_portfolio = SharedPortfolio(DATA / "shared-portfolio-control-v1.json")
+portfolio_feeds = PortfolioFeeds(shared_portfolio, fixed_portfolio)
 
 
 class Recorder:
@@ -97,6 +99,7 @@ class Session:
         self.n = 0
         self.last_quote = None
         self.darwin = DarwinSupervisor(symbol, mode, DATA)
+        self.darwin.portfolio_feedback = lambda: shared_portfolio.research_feedback(self.symbol)
         self.darwin_error = ""
         checkpoint = self.darwin.store.load_checkpoint()
         source = (checkpoint or {}).get('source')
@@ -297,6 +300,7 @@ def get_session(symbol='BTCUSDT', mode='live'):
 
 @asynccontextmanager
 async def lifespan(app):
+    start_comparison(shared_portfolio, fixed_portfolio)
     autostart_symbol = os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT')
     autostart_mode = 'live'
     for symbol in SYMBOLS:
@@ -453,6 +457,7 @@ async def darwin_state(symbol: str='BTCUSDT', mode: str='live'):
     result = s.darwin.state()
     result['error'] = s.darwin_error
     result['shared_portfolio'] = shared_portfolio.state()
+    result['shared_portfolio']['comparison'] = comparison(shared_portfolio, fixed_portfolio)
     return result
 
 

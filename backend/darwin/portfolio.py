@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from .paper import _walk
 from .signals import raw_signal_for_genome
+from .capital_feedback import evidence, scale_for, update_decisions
 
 class SharedPortfolio:
     VERSION = 1
@@ -20,6 +21,7 @@ class SharedPortfolio:
     def __init__(self, path: Path):
         self.path = path
         self.error = ""
+        self.adaptive = False
         self.books = {}
         self.funding = {}
         self.last_sequences = {}
@@ -152,6 +154,7 @@ class SharedPortfolio:
         self.data["closed"].append(dict(id=p["id"],strategy_id=p["strategy_id"],kind=p["kind"],opened_at=p["opened_at"],closed_at=now,
             net_eur=pnl-p["entry_fees_eur"]-exit_fees+p["funding_eur"],fees_eur=p["entry_fees_eur"]+exit_fees,reason=reason,legs=[{**l,"exit":px,"exit_fee_eur":fee} for l,px,fee in fills]))
         self.data["positions"].remove(p)
+        if self.adaptive: update_decisions(self.data,now)
         self.data["cooldown"][p["strategy_id"]]=now
         family_key=p["legs"][0]["instrument"]+":"+p["policy"].get("family",p["strategy_id"])
         self.data["cooldown"][family_key]=now
@@ -226,6 +229,7 @@ class SharedPortfolio:
             b=self.books[key]
             if (b["asks"][0][0]/b["bids"][0][0]-1)*10000>3: continue
             budget=min(100,self.totals()["equity_eur"]*.1)
+            if self.adaptive: budget*=scale_for(self.data,strategy_key,now)
             qty=math.floor(budget*self.fx/b["mid"]*10**decimals)/10**decimals
             if self.open(symbol+":"+g["id"],[dict(instrument=key,kind="perp",qty=qty*(1 if raw>0 else -1))],now,dict(g)):
                 used.add(g["family"])
@@ -261,6 +265,13 @@ class SharedPortfolio:
         self.reason="Delta neutral : deux jambes ouvertes" if ok else "Delta neutral : capital, précision ou liquidité insuffisants"
         self.record(now)
 
+    def research_feedback(self,symbol):
+        rows=[r for r in evidence(self.data,time.time()) if r["group"].startswith(symbol+":")]
+        return {"objective":"Increase the shared portfolio equity after modeled fees, not mutation count",
+                "equity_eur":self.totals()["equity_eur"],"pnl_eur":self.totals()["equity_eur"]-1000,
+                "allocation_policy":"0.25 for losing families; 0.5 exploration; up to 1 after 20 closes, 30min and positive fee stress",
+                "family_evidence":rows[:5],"limitations":"Fixed FX; estimated funding; shared capital attribution is not a controlled causal experiment"}
+
     def record(self,now):
         if now-self.last_history>=60:
             self.data["history"].append({"ts":now,**self.totals()})
@@ -281,4 +292,5 @@ class SharedPortfolio:
             funding_unobserved_seconds=self.data["funding_unobserved_seconds"],history=self.data["history"],
             books={k:{"age_seconds":max(0,now-b["ts"]),"fresh":self.fresh(k,now)} for k,b in self.books.items()},
             status="BLOCKED" if self.error else "PAPER",error=self.error,pair_status=self.reason,
+            allocation_feedback={"enabled":self.adaptive,"groups":evidence(self.data,now),"decisions":self.data.get("allocation_decisions",[])[-20:]},
             gamma_status="Non implémenté : aucune option ni grecque d’option dans ce moteur",paper_only=True)

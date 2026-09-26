@@ -57,10 +57,17 @@ def test_api_without_providers(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     monkeypatch.setattr(main, 'DATA', tmp_path)
     monkeypatch.setattr(main, 'sessions', {})
+    active = main.SharedPortfolio(tmp_path / 'shared.json')
+    control = main.SharedPortfolio(tmp_path / 'control.json')
+    feeds = main.PortfolioFeeds(active, control)
+    monkeypatch.setattr(main, 'shared_portfolio', active)
+    monkeypatch.setattr(main, 'fixed_portfolio', control)
+    monkeypatch.setattr(main, 'portfolio_feeds', feeds)
     async def public_stream_stub(self):
         import asyncio
         await asyncio.Event().wait()
     monkeypatch.setattr(main.Session, 'run', public_stream_stub)
+    monkeypatch.setattr(main.PortfolioFeeds, 'run', public_stream_stub)
     with TestClient(main.app) as client:
         health = client.get('/api/health').json()
         assert health['version'] == '0.11.0'

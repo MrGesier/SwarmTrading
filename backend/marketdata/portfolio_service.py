@@ -7,8 +7,9 @@ import httpx
 from .hyperliquid import HyperliquidPublicStream
 
 class PortfolioFeeds:
-    def __init__(self, portfolio):
+    def __init__(self, portfolio, control=None):
         self.portfolio=portfolio
+        self.portfolios=[portfolio]+([control] if control else [])
         self.decimals={}
         self.spot_key=None
         self.tasks=[]
@@ -24,7 +25,7 @@ class PortfolioFeeds:
                         r.raise_for_status();root=ET.fromstring(r.text)
                         rate=next(float(n.get("rate")) for n in root.iter() if n.get("currency")=="USD")
                         date=next(n.get("time") for n in root.iter() if n.get("time"))
-                        self.portfolio.set_fx(rate,date)
+                        for p in self.portfolios: p.set_fx(rate,date)
                     async def info(kind):
                         r=await client.post("https://api.hyperliquid.xyz/info",json={"type":kind});r.raise_for_status();return r.json()
                     meta,spot=await asyncio.gather(info("meta"),info("spotMeta"))
@@ -40,7 +41,7 @@ class PortfolioFeeds:
             except asyncio.CancelledError:
                 for t in self.tasks: t.cancel()
                 await asyncio.gather(*self.tasks,return_exceptions=True)
-                self.portfolio.save()
+                for p in self.portfolios: p.save()
                 raise
             except Exception as exc:
                 self.portfolio.error=f"Public portfolio feeds: {type(exc).__name__}"
@@ -55,17 +56,18 @@ class PortfolioFeeds:
                 exchange_ts=float(d["lastUpdateId"])/1000
                 if exchange_ts > received+2:
                     continue  # clock disagreement outside the bounded transport tolerance
-                self.portfolio.book(key,d["bids"],d["asks"],min(exchange_ts,received),decimals)
+                for p in self.portfolios: p.book(key,d["bids"],d["asks"],min(exchange_ts,received),decimals)
             elif event["type"]=="context" and event["data"].get("funding") is not None:
-                self.portfolio.funding[key]=(float(event["data"]["funding"]),received)
+                for p in self.portfolios: p.funding[key]=(float(event["data"]["funding"]),received)
 
     async def heartbeat(self):
         while True:
-            self.portfolio.pair(self.spot_key,time.time())
-            self.portfolio.record(time.time())
+            for p in self.portfolios:
+                p.pair(self.spot_key,time.time())
+                p.record(time.time())
             await asyncio.sleep(1)
 
     def observe(self,state,strategies):
         coin=state["symbol"].replace("USDT","")
         if coin in self.decimals and not self.portfolio.error:
-            self.portfolio.observe(state,strategies,self.decimals[coin])
+            for p in self.portfolios: p.observe(state,strategies,self.decimals[coin])
