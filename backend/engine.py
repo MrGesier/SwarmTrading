@@ -172,6 +172,10 @@ class Engine:
         score = float(np.clip(consensus * 70 + f['flow'] * 15 + f['weighted_imbalance'] * 15, -100, 100))
         direction = 'LONG' if score >= 0 else 'SHORT'
         state = f'{direction}_CONFIRMED' if abs(score) > 55 else f'{direction}_EARLY' if abs(score) > 30 else f'WATCH_{direction}' if abs(score) > 15 else 'NEUTRAL'
+        risk_causes = []
+        if health['status'] != 'HEALTHY': risk_causes.append('FEED_' + health['status'])
+        if self.neff is None: risk_causes.append('DIVERSITY_WARMUP')
+        elif self.neff < 1: risk_causes.append('INSUFFICIENT_DIVERSITY')
         if health['status'] != 'HEALTHY' or self.neff is None or self.neff < 1:
             state = 'RISK_OFF'
         if state == self.pending:
@@ -216,5 +220,7 @@ class Engine:
                     entropy=dict(market=hm, swarm=hs, price=hp, book=hb, trade=ht, slope=slope),
                     swarm=dict(raw=len(votes), active=int(np.count_nonzero(votes)), effective=self.neff, support=support,
                                consensus=consensus, velocity=velocity),
-                    intent=dict(state=self.previous, score=score, reasons=reasons, calibrated=False),
+                    intent=dict(state=self.previous, score=score, reasons=reasons, calibrated=False,
+                                risk_causes=risk_causes or (['RECOVERY_CONFIRMATION'] if self.previous == 'RISK_OFF' else []),
+                                candidate_state=state, confirmation_count=self.pending_count, effective_count=self.neff),
                     timeline=list(self.timeline), regime='EXPANSION' if volatility > 1.5 else 'COMPRESSION' if volatility < .5 else 'NORMAL')

@@ -117,3 +117,24 @@ def test_family_cooldown_cannot_be_bypassed_by_new_variant(tmp_path):
     assert not p.open("variant2",[leg("perp:BTC",1)],now+1,policy={"family":"Momentum"})
     book(p,"perp:BTC",now+61)
     assert p.open("variant2",[leg("perp:BTC",1)],now+61,policy={"family":"Momentum"})
+
+
+def test_risk_exit_context_survives_restart_and_explains_duration(tmp_path,monkeypatch):
+    from engine import GENOMES
+    from darwin.genome import upgrade_genome
+    import darwin.portfolio as module
+    p=setup(tmp_path);now=time.time()
+    monkeypatch.setattr(module.time,"time",lambda:now)
+    monkeypatch.setattr(module,"raw_signal_for_genome",lambda *_:1.0)
+    g=upgrade_genome(dict(GENOMES[0]))
+    book(p,"perp:BTC",now-4)
+    assert p.open("BTCUSDT:"+g["id"],[leg("perp:BTC",1)],now-4,policy=g)
+    state=dict(symbol="BTCUSDT",venue="HYPERLIQUID",timestamp=now,
+        health=dict(status="HEALTHY",age_ms=0,sequence=123),bids=[[99.99,100]],asks=[[100.01,100]],
+        features={},intent=dict(state="RISK_OFF",risk_causes=["RECOVERY_CONFIRMATION"]))
+    p.observe(state,[g],3)
+    assert p.state()["market_diagnostics"][0]["stage"]=="RISK_OFF"
+    restored=SharedPortfolio(p.path).state()
+    assert not restored["positions"]
+    assert restored["closed"][0]["exit_context"]["causes"]==["RECOVERY_CONFIRMATION"]
+    assert restored["exit_summary"]==dict(total=1,median_seconds=4,reasons={"risk_off":1})

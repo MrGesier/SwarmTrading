@@ -74,3 +74,18 @@ def test_raw_replay_matches_state_and_no_candle_lookahead(tmp_path,monkeypatch):
     s.book.valid=False
     s.derive(1025)
     assert s.latest['intent']['state']=='RISK_OFF'
+
+
+def test_risk_diagnostics_explain_warmup_and_recovery_without_bypassing_gate(monkeypatch):
+    from engine import Engine, GENOMES
+    e=Engine()
+    monkeypatch.setattr(e,"votes",lambda *_args,**_kwargs:np.zeros(len(GENOMES)))
+    def frame(t):return e.calculate(book(),t,"live","BTCUSDT",{"status":"HEALTHY"})["intent"]
+    first=frame(1000)
+    assert first["state"]=="RISK_OFF" and first["risk_causes"]==["DIVERSITY_WARMUP"]
+    e.neff=2
+    recovery=frame(1001)
+    assert recovery["state"]=="RISK_OFF" and recovery["risk_causes"]==["RECOVERY_CONFIRMATION"]
+    assert frame(1002)["state"]=="RISK_OFF"
+    released=frame(1003)
+    assert released["state"]=="NEUTRAL" and released["risk_causes"]==[]
