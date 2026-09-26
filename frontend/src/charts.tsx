@@ -5,7 +5,6 @@ import {
   useChartWindow,
   WindowControls,
   useAxis,
-  AxisControls,
   usePlotWidth,
 } from "./chart-controls";
 export const fmt = (n: number, d = 2) =>
@@ -57,10 +56,6 @@ export function Spark({
           points={points}
         />
       </svg>
-      <details className="mini-history">
-        <summary>Explorer la courbe</summary>
-        <LineChart label={label} values={values} />
-      </details>
     </>
   );
 }
@@ -76,8 +71,8 @@ export function PriceChart({
   onSeek?: (time: number) => void;
 }) {
   const [interval, setInterval] = useState(5),
-    [scale, setScale] = useState("price"),
-    [zonesOn, setZonesOn] = useState(true);
+    [scale] = useState("price"),
+    [zonesOn] = useState(true);
   const [hover, setHover] = useState<number | null>(null);
   const view = useChartWindow(state.candles.map((c) => c.time));
   const candles = aggregateCandles(state.candles, interval).filter(
@@ -127,32 +122,19 @@ export function PriceChart({
     })
     .filter((c) => c.time + interval > view.from && c.time <= view.to);
   const selected = hover === null ? candles.at(-1) : candles[hover];
-  const drag = useRef<{ x: number; end: number } | null>(null);
-  const plotRef = useRef<SVGSVGElement>(null);
-  useEffect(() => {
-    const plot = plotRef.current;
-    if (!plot) return;
-    const wheel = (e: WheelEvent) => {
-      if (e.ctrlKey) {
-        e.preventDefault();
-        view.zoom(e.deltaY > 0 ? 1.3 : 0.7);
-      }
-    };
-    plot.addEventListener("wheel", wheel, { passive: false });
-    return () => plot.removeEventListener("wheel", wheel);
-  }, [view.seconds, view.first, view.last]);
+
   return (
     <div className="interactive-chart" ref={ref}>
-      <WindowControls view={view} />
-      <div className="plot-toolbar">
+      <div className="plot-toolbar compact-time">
         <label>
-          Bougie
+          Unité de temps
           <select
             aria-label="Durée des bougies"
             value={interval}
             onChange={(e) => {
-              setInterval(Number(e.target.value));
-              axis.reset();
+              const step = Number(e.target.value);
+              setInterval(step);
+              view.setSeconds(step * 60);
             }}
           >
             {[5, 15, 30, 60, 300].map((v) => (
@@ -162,81 +144,31 @@ export function PriceChart({
             ))}
           </select>
         </label>
-        <label>
-          Unité / échelle
-          <select
-            aria-label="Échelle du prix"
-            value={scale}
-            onChange={(e) => {
-              setScale(e.target.value);
-              axis.reset();
-            }}
-          >
-            <option value="price">Prix · linéaire</option>
-            <option value="percent">Variation · %</option>
-            <option value="log">Prix · logarithmique</option>
-          </select>
-        </label>
-        <button aria-pressed={zonesOn} onClick={() => setZonesOn(!zonesOn)}>
-          Zones de déclenchement
-        </button>
-      </div>
-      <AxisControls axis={axis} />
-      <div className="plot-readout">
-        {selected
-          ? `${clock(selected.time)} · O ${fmt(selected.open)} · H ${fmt(selected.high)} · B ${fmt(selected.low)} · C ${fmt(selected.close)} · Vol ${fmt(selected.volume, 3)}`
-          : "En attente de bougies observées"}
       </div>
       <svg
-        ref={plotRef}
         className="controlled-plot"
         viewBox={`0 0 ${W} ${H}`}
         role="img"
         aria-label={`Prix, bougies ${interval} secondes, échelle ${scale}`}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          drag.current = { x: e.clientX, end: view.to };
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }}
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
-          if (drag.current) {
-            view.setEnd(
-              Math.max(
-                view.first + view.width,
-                Math.min(
-                  view.last,
-                  drag.current.end -
-                    ((e.clientX - drag.current.x) / P) * view.width,
-                ),
-              ),
-            );
-          } else {
-            const time =
-              view.from + ((e.clientX - rect.left - L) / P) * view.width;
-            setHover(
-              candles.length
-                ? candles.reduce(
-                    (best, c, i) =>
-                      Math.abs(c.time - time) <
-                      Math.abs(candles[best].time - time)
-                        ? i
-                        : best,
-                    0,
-                  )
-                : null,
-            );
-          }
+          const time =
+            view.from + ((e.clientX - rect.left - L) / P) * view.width;
+          setHover(
+            candles.length
+              ? candles.reduce(
+                  (best, c, i) =>
+                    Math.abs(c.time - time) <
+                    Math.abs(candles[best].time - time)
+                      ? i
+                      : best,
+                  0,
+                )
+              : null,
+          );
         }}
-        onPointerUp={(e) => {
-          const moved = drag.current
-            ? Math.abs(e.clientX - drag.current.x) > 4
-            : false;
-          drag.current = null;
-          if (!moved && selected) onSeek?.(selected.time);
-        }}
-        onPointerCancel={() => {
-          drag.current = null;
+        onClick={() => {
+          if (selected) onSeek?.(selected.time);
         }}
         onPointerLeave={() => setHover(null)}
       >
@@ -285,6 +217,10 @@ export function PriceChart({
             ))}
           {candles.map((c) => (
             <g key={c.time}>
+              <title>
+                {clock(c.time)} · O {fmt(c.open)} H {fmt(c.high)} B {fmt(c.low)}{" "}
+                C {fmt(c.close)}
+              </title>
               <line
                 x1={x(c.time)}
                 x2={x(c.time)}
@@ -361,23 +297,6 @@ export function PriceChart({
           </text>
         ))}
       </svg>
-      <p className="plot-note">
-        Glisser pour naviguer · Ctrl + molette pour zoomer ·{" "}
-        {state.candles.length} bougies source de 5 s disponibles. Agrégation
-        réelle OHLCV ; première et dernière bougies potentiellement partielles.{" "}
-        {vwap ? "VWAP ancré au début de l’historique disponible. " : ""}
-        {view.end !== null
-          ? "Vue figée : zones actuelles masquées."
-          : "Les zones décrivent les seuils actuels, pas des ordres exécutés."}
-        {scale === "percent"
-          ? ` Base fixe 0 % : ${fmt(origin)} USD à l’ouverture du graphique.`
-          : ""}
-        {zonesOn &&
-        view.end === null &&
-        zones.some((z) => y(z.price) < T || y(z.price) > H - B)
-          ? " Certains seuils sont hors échelle : réduire le zoom vertical pour les voir."
-          : ""}
-      </p>
     </div>
   );
 }
@@ -443,10 +362,7 @@ export function LineChart({
         epochs={epochs || !times}
         indexLabel={epochs ? "cycles" : "mesures"}
       />
-      <details className="axis-options">
-        <summary>Échelle et zoom vertical</summary>
-        <AxisControls axis={axis} />
-      </details>
+
       <div className="plot-readout">
         {point
           ? `${times && !epochs ? new Date(point.t * 1000).toLocaleString("fr-FR") : epochs ? "Cycle " + point.t : "Mesure " + (point.t + 1)} · ${point.v == null ? "indisponible" : fmt(point.v, 3)} ${unit}`
@@ -535,23 +451,14 @@ export function LineChart({
           </text>
         ))}
       </svg>
-      <p className="plot-note">
-        {times && !epochs
-          ? "Horodatages réels · historique disponible uniquement."
-          : epochs
-            ? "Axe horizontal : cycles, pas une durée de trading."
-            : "Axe horizontal : mesures disponibles, pas des secondes."}{" "}
-        {unit && `Unité : ${unit}.`} Les données absentes restent des
-        interruptions de courbe.
-      </p>
     </section>
   );
 }
 
 export function Liquidity({ history }: { history: History[] }) {
   const view = useChartWindow(history.map((h) => h.time)),
-    [spread, setSpread] = useState(10),
-    [locked, setLocked] = useState<number | null>(null);
+    [spread] = useState(10),
+    [locked] = useState<number | null>(null);
   const frames = history.filter(
       (h) => h.time >= view.from && h.time <= view.to,
     ),
@@ -637,30 +544,9 @@ export function Liquidity({ history }: { history: History[] }) {
   return (
     <div className="interactive-chart">
       <WindowControls view={view} />
-      <div className="plot-toolbar">
-        <label>
-          Étendue de prix
-          <select
-            aria-label="Étendue de prix de la liquidité"
-            value={spread}
-            onChange={(e) => setSpread(Number(e.target.value))}
-          >
-            {[2, 5, 10, 30, 100].map((v) => (
-              <option key={v} value={v}>
-                ±{v} bp
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          aria-pressed={locked !== null}
-          onClick={() => setLocked(locked === null ? center : null)}
-        >
-          {locked === null ? "Verrouiller le centre" : "Centrer sur le prix"}
-        </button>
-      </div>
-      <div className="plot-readout">{detail}</div>
+
       <canvas
+        title={detail}
         ref={canvasRef}
         className="liquidity controlled-heatmap"
         role="img"
@@ -693,17 +579,13 @@ export function Liquidity({ history }: { history: History[] }) {
           );
         }}
       />
-      <p className="plot-note">
-        Couleur : profondeur relative dans la vue. Les espaces sans observation
-        ne sont pas interpolés. Prix en USD, quantité en actif de base.
-      </p>
     </div>
   );
 }
 
 export function Phase({ history }: { history: History[] }) {
   const view = useChartWindow(history.map((h) => h.time)),
-    [range, setRange] = useState(0.1),
+    [range] = useState(0.1),
     clip = useId();
   const h = history.filter((p) => p.time >= view.from && p.time <= view.to),
     x = (v: number) => 45 + v * 310,
@@ -711,22 +593,7 @@ export function Phase({ history }: { history: History[] }) {
   return (
     <div className="interactive-chart">
       <WindowControls view={view} />
-      <div className="plot-toolbar">
-        <label>
-          Étendue verticale
-          <select
-            aria-label="Échelle de variation de l’entropie"
-            value={range}
-            onChange={(e) => setRange(Number(e.target.value))}
-          >
-            {[0.01, 0.05, 0.1, 0.5].map((v) => (
-              <option key={v} value={v}>
-                ±{v}/s
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+
       <svg
         viewBox="0 0 400 240"
         className="controlled-plot"
@@ -784,9 +651,9 @@ export function Phase({ history }: { history: History[] }) {
 }
 
 export function TriggerChart({ state }: { state: State }) {
-  const [range, setRange] = useState(30),
-    [unit, setUnit] = useState("bp"),
-    [ceiling, setCeiling] = useState(0);
+  const [range] = useState(30),
+    [unit] = useState("bp"),
+    [ceiling] = useState(0);
   const rows = state.triggers
     .filter((t) => Math.abs(t.bp) <= range)
     .slice()
@@ -794,48 +661,6 @@ export function TriggerChart({ state }: { state: State }) {
   const max = ceiling || Math.max(...rows.map((t) => t.density), 1);
   return (
     <div className="interactive-chart">
-      <div className="plot-toolbar">
-        <label>
-          Étendue
-          <select
-            aria-label="Étendue des seuils"
-            value={range}
-            onChange={(e) => setRange(Number(e.target.value))}
-          >
-            {[5, 10, 20, 30].map((v) => (
-              <option key={v} value={v}>
-                ±{v} bp
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Axe prix
-          <select
-            aria-label="Unité des seuils"
-            value={unit}
-            onChange={(e) => setUnit(e.target.value)}
-          >
-            <option value="bp">Écart · bp</option>
-            <option value="price">Prix · USD</option>
-          </select>
-        </label>
-        <label>
-          Densité max
-          <select
-            value={ceiling}
-            aria-label="Échelle de densité"
-            onChange={(e) => setCeiling(Number(e.target.value))}
-          >
-            <option value={0}>Auto</option>
-            {[1, 5, 10, 25, 50].map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
       <div className="trigger-bars">
         {rows.map((t) => (
           <div
@@ -860,10 +685,6 @@ export function TriggerChart({ state }: { state: State }) {
           </div>
         ))}
       </div>
-      <p className="plot-note">
-        Instantané des seuils actuels · densité en stratégies effectives. Ce
-        n’est ni une série temporelle ni un historique d’entrées exécutées.
-      </p>
     </div>
   );
 }

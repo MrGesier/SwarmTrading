@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { windowRange, extent, axisDomain } from "./chart-math";
+import { windowRange, extent } from "./chart-math";
 
 export function useChartWindow(times: number[], initial = 300) {
   const [seconds, setSeconds] = useState(initial),
@@ -15,28 +15,6 @@ export function useChartWindow(times: number[], initial = 300) {
     last,
     setSeconds,
     setEnd,
-    reset: () => {
-      setSeconds(initial);
-      setEnd(null);
-    },
-    zoom: (factor: number) => {
-      setSeconds(
-        Math.max(
-          5,
-          Math.min(
-            Math.max(5, last - first),
-            range.width * factor,
-          ),
-        ),
-      );
-    },
-    pan: (fraction: number) =>
-      setEnd(
-        Math.max(
-          first + range.width,
-          Math.min(last, range.to + fraction * range.width),
-        ),
-      ),
   };
 }
 export type ChartWindow = ReturnType<typeof useChartWindow>;
@@ -53,7 +31,7 @@ export function WindowControls({
     <div
       className="plot-toolbar"
       role="group"
-      aria-label="Navigation du graphique"
+      aria-label="Période du graphique"
     >
       <label>
         {epochs ? `Fenêtre · ${indexLabel}` : "Période"}
@@ -71,10 +49,7 @@ export function WindowControls({
             view.setEnd(null);
           }}
         >
-          <option value={-1} disabled>
-            Personnalisée
-          </option>
-          {(epochs ? [10, 30, 60] : [60, 300, 900, 3600, 86400]).map((v) => (
+          {(epochs ? [10, 30, 60] : [60, 300, 900]).map((v) => (
             <option key={v} value={v}>
               {epochs
                 ? `${v} ${indexLabel}`
@@ -88,97 +63,13 @@ export function WindowControls({
           <option value={0}>Tout disponible</option>
         </select>
       </label>
-      <button
-        type="button"
-        aria-label="Reculer dans le graphique"
-        disabled={view.from <= view.first}
-        onClick={() => view.pan(-0.5)}
-      >
-        ←
-      </button>
-      <button
-        type="button"
-        aria-label="Avancer dans le graphique"
-        disabled={view.to >= view.last}
-        onClick={() => view.pan(0.5)}
-      >
-        →
-      </button>
-      <button
-        type="button"
-        aria-label="Zoom temporel avant"
-        onClick={() => view.zoom(0.5)}
-      >
-        ＋
-      </button>
-      <button
-        type="button"
-        aria-label="Zoom temporel arrière"
-        onClick={() => view.zoom(2)}
-      >
-        −
-      </button>
-      <button
-        type="button"
-        aria-pressed={view.end === null}
-        onClick={() => view.setEnd(view.end === null ? view.to : null)}
-      >
-        {view.end === null ? "Figer la vue" : "Suivre le flux"}
-      </button>
-      <button type="button" onClick={view.reset}>
-        Réinitialiser
-      </button>
-      <span className="plot-available">
-        Disponible :{" "}
-        {epochs
-          ? `${Math.round(view.last - view.first) + 1} ${indexLabel}`
-          : `${Math.floor((view.last - view.first) / 60)} min ${Math.round((view.last - view.first) % 60)} s`}
-      </span>
     </div>
   );
 }
 export function useAxis(values: number[], zero = false) {
-  const [zoom, setZoom] = useState(1),
-    [locked, setLocked] = useState<[number, number] | null>(null);
-  const base = locked ?? extent(values, zero),
-    domain = axisDomain(base, zoom);
-  return {
-    domain,
-    zoom,
-    setZoom,
-    locked,
-    toggle: () => setLocked(locked ? null : base),
-    reset: () => {
-      setZoom(1);
-      setLocked(null);
-    },
-  };
+  return { domain: extent(values, zero) };
 }
-export function AxisControls({ axis }: { axis: ReturnType<typeof useAxis> }) {
-  return (
-    <div className="plot-toolbar axis-toolbar">
-      <label>
-        Zoom vertical
-        <input
-          aria-label="Zoom vertical"
-          type="range"
-          min="0.5"
-          max="5"
-          step="0.1"
-          value={axis.zoom}
-          onChange={(e) => axis.setZoom(Number(e.target.value))}
-        />
-        <span>{axis.zoom.toFixed(1)}×</span>
-      </label>
-      <button type="button" aria-pressed={!!axis.locked} onClick={axis.toggle}>
-        {axis.locked ? "Échelle verrouillée" : "Verrouiller l’échelle"}
-      </button>
-      <button type="button" onClick={axis.reset}>
-        Échelle auto
-      </button>
-    </div>
-  );
-}
+
 export function usePlotWidth() {
   const ref = useRef<HTMLDivElement>(null),
     [width, setWidth] = useState(650);

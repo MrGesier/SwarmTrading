@@ -1,35 +1,23 @@
-# Visual and interaction audit — 2026-09-26
+# Chart and integration review — 2026-09-26
 
-Scope: rendered market, diagnostics and Factory charts; trading calculations remain unchanged.
+## Revised interface
 
-| View | Previous problem | Implemented behavior |
-| --- | --- | --- |
-| Price / trigger zones | Hardcoded last 100 five-second bars; auto axes jumped; no navigation; fixed bar widths | Full available candle buffer, real OHLCV aggregation (5/15/30/60/300 seconds), time window, pan, horizontal zoom, vertical zoom, locked axis, linear/log/percentage, OHLCV inspection |
-| Trigger overlays | Current hypothetical levels looked like historical entries; empty sides could crash the chart | Optional current overlays, hidden in historical view, safe empty sides, out-of-range notice; explicitly not executed entries |
-| Liquidity | Last 100 snapshots evenly spaced; no controls; fine labels | Observed timestamps, gaps visible, time navigation, price extent in bp, center lock, inspect time/price/quantity, consistent palette |
-| Trigger density | Tiny labels and clipped rows, hardcoded extent | Scrollable readable rows, ±5/10/20/30 bp extent, price/bp units, density scale. Snapshot, not time series |
-| Entropy and metric histories | Decorative curves without values or axes | Full entropy chart; metric thumbnails expand to an inspectable chart. Measurement-index axis used when timestamps are not supplied; never called seconds |
-| Factory paper PnL | Auto-normalized thumbnails without time/scale | Timestamped plots, hover readout, zero reference, zoom/lock, unavailable data remain gaps; current epoch only, not a cumulative invested portfolio |
-| Factory evolution | Nulls coerced to zero; no cycle axis | Missing values retained, explicit cycle axis and window, vertical controls |
-| Phase plane | Slope silently clamped, no period selection | Observed period, selectable slope range, clipped rather than falsified values, point details |
-| Trigger surface | Dense matrix difficult to read | Adjustable matrix size with horizontal scroll, readable cells, explicit snapshot semantics |
-| Family votes / consensus / normalized gauges | Can be mistaken for performance or time charts | Keep meaningful fixed fraction/[-1,1]/[0,1] domains and existing explanatory help; no artificial timeframe or logarithm for signed fractions |
-| Multi-horizon component | Fixed last 90 samples | Shared period controls (component is not currently mounted by main routing) |
+The earlier navigation/axis control panel was too complex. All shared chart controls now expose only a time window (or number of cycles). Price has one candle-duration selector: 5/15/30 seconds, 1/5 minutes. It groups observed OHLCV and displays up to 60 bars within retained history. Axes adjust automatically. Freeze, reset, pan, zoom, axis locking, logarithmic/percentage selectors and matrix zoom have been removed. Metric thumbnails stay compact. Hover and contextual help retain details without permanent explanatory paragraphs.
 
-## Interaction conventions
+Liquidity, entropy, phase, Factory PnL and evolution retain their own appropriate time/cycle selector. Trigger density and the trigger surface are current snapshots: a time selector would be misleading. Fixed normalized gauges retain their semantic domains. The owl replaces the flock in the application and favicon; wallet access sits below research navigation.
 
-- Period = visible historical window; candle duration = OHLCV grouping; strategy horizon = unchanged engine analysis. They are independent.
-- Window controls offer 1/5/15 minutes, 1/24 hours and all **available** observations. They cannot fetch nonexistent history. Engine currently retains at most 180 five-second candles and sends 180 market snapshots; replay has its own smaller capture.
-- Pan freezes the visible time endpoint; follow resumes incoming observations. If the engine evicts old observations, the accessible window clamps to retained history.
-- Lock axis fixes vertical bounds; zoom operates around their center. Percentage reference is fixed at chart opening. Log is offered only for the positive price series, not PnL.
-- Price VWAP uses the entire retained source buffer, not the selected zoom window; it is not a session/exchange VWAP. Source-buffer eviction changes its anchor.
-- First/last aggregated candles may be partial. Missing candles are not synthesized. Charts do not modify risk, PnL, fees, strategy horizon or orders.
-- Historical database-backed PnL remains descriptive: changing active cohorts and different G0 windows are still disclosed in Factory.
+## Data meaning
 
-## Validation
+Display intervals never change strategy horizons or trading decisions. Source candles are five seconds; at most 180 are retained. Longer grouping cannot create missing history. Partial buckets remain partial. VWAP uses the retained buffer, not an exchange session. Trigger zones are hypothetical sensitivities, not actual entries. Factory PnL is per-strategy/cohort paper performance, not invested portfolio equity; missing observations are not zero returns.
 
-Node tests cover OHLCV buckets/order/volume/immutability, missing data, viewport clamps and pause, constant/negative axes and vertical zoom. Build includes TypeScript checking. Required backend checks ensure presentation changes leave the engine contract intact. Browser checks exercise period/interval/unit selection, keyboard axis locking, Factory data and narrow/wide layout.
+## Strategy attributes reviewed
 
-## Remaining data limitations
+Eight bounded genes already control entry/exit thresholds, gain, maximum holding, cooldown, stop loss, take profit and confirmation ticks. Order-flow, book-pressure and microprice families use flow, weighted imbalance and microprice; volatility and spread also enter family calculations. These are not all freely mutable weights. Existing paired paper experiments isolate imbalance, flow, microprice and spread filtering.
 
-Long-duration selections do not add a historical candle download service. Real executed trade markers cannot be inferred from trigger levels. Cohort means are not portfolio equity. A historical funding-adjusted invested portfolio and exchange-level execution markers require separate underlying data work, not graphical interpolation.
+The next useful experiments are an entry cost/spread ceiling, minimum executable depth and flow/imbalance alignment. Each needs one bounded gene, persisted context and a paired paper comparison before promotion. No new unvalidated gene or live permission is introduced by this interface change.
+
+## Validation scope
+
+Required backend regression checks: 37 passed. Dependency install and production build pass. Runtime health, brains, research, Factory and engineer endpoints respond successfully; health confirms Hyperliquid source and paper-only execution. Browser integration checks cover live market rendering, candle duration independent of strategy horizon, Factory telemetry, wallet navigation and responsive layout. These checks do not establish profitability, wallet signing or exchange order execution. Observed intermittent stale-book warnings remain visible and must not be bypassed.
+
+Observed integration snapshot: Factory exposed 52 active strategies, generation 14 and epoch 45, with 230 closed trades in the current active cohort. Mean net was approximately -3.18 USD against 3.10 USD fees per active strategy. UI rounded these consistently to -3.2 and 3.1 USD. Recursive telemetry recorded a usable LLM response and earlier paced/fallback attempts. This is a working research loop with fee drag, not demonstrated profitable self-improvement. Browser selection of 60-second candles left the strategy horizon at 5 seconds; no chart toolbar buttons remained. Compact layout had no document-level horizontal overflow. Wallet stayed read-only and testnet had no submitted validation order.

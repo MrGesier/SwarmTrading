@@ -326,8 +326,8 @@ function App() {
         >
           <span className="brand-icon">
             <img
-              src="/swarm-flock.png"
-              alt="Swarm Trading — envolée origami cuivre et ivoire"
+              src="/darwin-owl.png"
+              alt="Swarm Trading — chouette terracotta"
             />
           </span>
           <span>
@@ -339,7 +339,7 @@ function App() {
           DARWIN <span>V0.11</span>
         </div>
         <nav>
-          {routes.filter(r => ["/", "/darwin", "/factory", "/hyperliquid"].includes(r.path)).map((r) => (
+          {routes.filter(r => ["/", "/darwin", "/factory"].includes(r.path)).map((r) => (
             <a
               key={r.path}
               className={route === r.path ? "active" : ""}
@@ -365,6 +365,7 @@ function App() {
             One synchronized market state.
           </p>
         </div>
+        <a className={`wallet-access ${route==="/hyperliquid"?"active":""}`} href="/hyperliquid" onClick={e=>{e.preventDefault();navigate("/hyperliquid");}} title="Wallet Hyperliquid / MetaMask"><ShieldCheck size={18}/><span>Wallet & connexion</span></a>
         <div className="engine-status">
           <span className={`dot ${isHealthy ? "" : "amber-dot"}`} />
           <div>
@@ -649,12 +650,7 @@ function App() {
                         label={
                           <span className="chart-tools">
                             <span>OHLCV · observé</span>
-                            <button
-                              className={vwap ? "toggle selected" : "toggle"}
-                              onClick={() => setVwap(!vwap)}
-                            >
-                              VWAP
-                            </button>
+
                             <span className="live-label">
                               {replay && frames.length
                                 ? "REPLAY"

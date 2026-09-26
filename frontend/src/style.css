@@ -2216,3 +2216,9 @@ footer i {
 .metric > .spark{position:static;width:100%;height:32px;opacity:.8;margin-top:10px}
 .autocorrection-panel > label{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
 .autocorrection-panel > label select{min-width:0;max-width:100%}
+
+/* Wallet stays below the research navigation, including the compact sidebar. */
+.wallet-access{display:flex;align-items:center;gap:10px;margin-top:auto;padding:12px 10px;border-radius:8px;color:var(--muted);font-size:12px;border:1px solid var(--border)}
+.wallet-access:hover,.wallet-access.active{color:#edb18b;background:#241e1b;border-color:#674638}
+.wallet-access+.engine-status{margin-top:0}
+@media(max-width:900px){.wallet-access{justify-content:center;padding:12px 4px}.wallet-access span{display:none}.wallet-access svg{flex-shrink:0}}
