@@ -454,3 +454,28 @@ def test_agent_audit_roundtrip_and_history_cursor(tmp_path, monkeypatch):
     assert older[0]["audit"]["task"] == "Assess fees and imbalance"
     assert '12' in older[0]["audit"]["context_preview"]
     assert newest[0]["ok"] is False
+
+
+@pytest.mark.parametrize("side", [1, -1])
+def test_capital_tracking_reconciles_partial_and_full_closes(side):
+    account = PaperAccount(dict(GENOMES[0]))
+    account.last_mid = 100
+    account.cash = -7.0  # prior closed loss must remain separate
+    account._open(side, state(1, 100))
+    first = account.metrics()
+    assert first["closed_net_pnl_usd"] == -7
+    assert first["reference_equity_usd"] == pytest.approx(1000 + first["pnl"])
+    partial = state(2, 101)
+    partial["bids"] = [[100.5, 1]]
+    partial["asks"] = [[101.5, 1]]
+    assert not account._close(partial)
+    account.last_mid = 101
+    second = account.metrics()
+    assert second["closed_net_pnl_usd"] == -7
+    assert second["open_net_pnl_usd"] + second["closed_net_pnl_usd"] == pytest.approx(second["pnl"])
+    assert second["position_notional_usd"] == pytest.approx(abs(account.quantity) * 101)
+    assert account._close(state(3, 101))
+    final = account.metrics()
+    assert final["open_net_pnl_usd"] == 0
+    assert final["closed_net_pnl_usd"] == pytest.approx(final["pnl"])
+    assert final["reference_equity_usd"] == pytest.approx(1000 + final["closed_net_pnl_usd"])

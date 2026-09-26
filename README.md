@@ -391,3 +391,12 @@ liquidations, all failure modes, HIP-3/subaccount aggregation, profitability or
 mainnet readiness. The funding rate is displayed, not added to existing paper
 accounting. Mainnet activation remains a separate human decision; this panel
 cannot enable it. Software test doubles are not claimed as exchange validation.
+
+
+### Capital et positions paper
+
+Dans **Recherche et trades → Capital et positions paper**, le compteur couvre toutes les stratégies actives, pas seulement les 25 premières du classement. Choisir un compte permet de suivre son nominal de référence, sa valeur de référence actuelle, les résultats nets des épisodes clôturés et de la position en cours, ainsi que les frais déjà déduits. Le détail des positions indique le sens, l'ouverture et le nominal exposé.
+
+La base par défaut est **1 000 USD par stratégie indépendante**, pas 1 000 EUR et pas une enveloppe partagée. La valeur de référence est `nominal + PnL clôturé net + PnL de l'épisode ouvert net`. Elle n'est ni le cash comptable, ni une marge disponible, ni le solde d'un wallet. Les clôtures partielles restent dans l'épisode ouvert jusqu'à sa clôture complète. Les frais futurs de sortie, le funding et l'impact réel ne sont pas inclus. Le nominal de trading reste fixe : les profits ne sont pas automatiquement réinvestis.
+
+Les comptes repartent à zéro au changement de cycle. Le journal des clôtures et les comparaisons de cycles sont conservés séparément ; cette vue ne prétend pas représenter un capital cumulé depuis le premier lancement. Un portefeuille commun en EUR nécessiterait une comptabilité et une allocation distinctes.

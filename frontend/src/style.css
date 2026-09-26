@@ -2222,3 +2222,8 @@ footer i {
 .wallet-access:hover,.wallet-access.active{color:#edb18b;background:#241e1b;border-color:#674638}
 .wallet-access+.engine-status{margin-top:0}
 @media(max-width:900px){.wallet-access{justify-content:center;padding:12px 4px}.wallet-access span{display:none}.wallet-access svg{flex-shrink:0}}
+
+[aria-label="Suivi du capital paper"]{margin:20px 0;padding:20px;min-width:0}
+[aria-label="Suivi du capital paper"]>label{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0}
+[aria-label="Suivi du capital paper"] select{max-width:100%;min-width:0}
+[aria-label="Suivi du capital paper"]>.panel-note{line-height:1.6;margin:12px 0}
