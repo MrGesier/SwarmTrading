@@ -25,7 +25,7 @@ export function useChartWindow(times: number[], initial = 300) {
           5,
           Math.min(
             Math.max(5, last - first),
-            (seconds || last - first) * factor,
+            range.width * factor,
           ),
         ),
       );
