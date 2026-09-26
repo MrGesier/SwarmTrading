@@ -132,3 +132,10 @@ def test_unread_account_is_not_treated_as_zero_exposure(service):
     assert not result['ready'] and not result['checks']['clean_test_account']
     assert not result['checks']['exposure_cap']
     assert result['exposure']['projected_usd'] is None
+
+
+def test_clock_skew_is_bounded(service):
+    data=snapshot();data['book']['time']=(time.time()+0.5)*1000
+    assert service.assess(ValidationRequest(),data)['checks']['fresh_book']
+    data['book']['time']=(time.time()+5)*1000
+    assert not service.assess(ValidationRequest(),data)['checks']['fresh_book']

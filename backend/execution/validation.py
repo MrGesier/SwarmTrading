@@ -114,7 +114,8 @@ class TestnetValidation:
             'dedicated_api_wallet': bool(agent and agent.lower()!=cfg.account_address.lower()),
             'api_wallet_approved': approved,
             'funded_test_account': balance>=request.notional_usd,
-            'fresh_book': 0<=age<=10 and 0<bid<=ask and mark>0,
+            # Allow bounded clock skew, never an arbitrarily future timestamp.
+            'fresh_book': -1<=age<=10 and 0<bid<=ask and mark>0,
             'fees_available': maker is not None and taker is not None,
             'finite_funding': math.isfinite(funding),
             'exposure_cap': account_read and 0<value<=request.notional_usd<=cfg.max_notional_usd and gross+pending+value<=cfg.max_notional_usd,
