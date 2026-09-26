@@ -408,3 +408,35 @@ def test_async_epoch_keeps_event_loop_responsive_and_deduplicates(tmp_path,monke
         assert result['advice']=='validated advice'
         assert not sup._epoch_running
     asyncio.run(scenario())
+
+
+def test_control_trade_archive_is_durable_separate_and_deduplicated(tmp_path, monkeypatch):
+    from darwin.supervisor import DarwinSupervisor
+    monkeypatch.setenv('DARWIN_LLM_ENABLED','false')
+    sup=DarwinSupervisor('BTCUSDT','live',tmp_path)
+    row=dict(strategy_id='control',opened_at=1,closed_at=2,net_pnl_usd=3)
+    account=next(iter(sup.baseline.accounts.values()))
+    account.closed_trade_log.append(row)
+    sup.persist_trades()
+    assert not account.closed_trade_log
+    assert sup.store.recent_trades()==[]
+    account.closed_trade_log.append(row)
+    sup.persist_trades()
+    assert sup.store._db.execute('SELECT count(*) FROM baseline_trades').fetchone()[0]==1
+    account.closed_trade_log.append(row)
+    monkeypatch.setattr(sup.store,'save_baseline_trades',lambda rows: (_ for _ in ()).throw(OSError('disk failure')))
+    with pytest.raises(OSError):sup.persist_trades()
+    assert list(account.closed_trade_log)==[row]
+    sup.store.close()
+
+
+def test_snapshot_detaches_nested_trade_and_statistical_history():
+    pop=PaperPopulation([dict(id='g0',family='Momentum',horizon=1,threshold=.01,gain=2)])
+    a=pop.accounts['g0']
+    a.closed_trade_log.append({'nested':{'values':[1]}})
+    a.closed_pnls.append(2)
+    snapshot=pop.snapshot()
+    a.closed_trade_log[0]['nested']['values'].append(3)
+    a.closed_pnls.append(4)
+    assert snapshot['accounts']['g0']['closed_trade_log']==[{'nested':{'values':[1]}}]
+    assert snapshot['accounts']['g0']['closed_pnls']==[2]

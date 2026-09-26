@@ -80,15 +80,15 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const [replaying,setReplaying]=useState(false);
   const [replayEvents,setReplayEvents]=useState<FactoryEvent[]>([]);
   useEffect(()=>{
-    let stopped=false, socket:WebSocket|undefined, retry:ReturnType<typeof setTimeout>|undefined;
+    let stopped=false, loading=false, socket:WebSocket|undefined, retry:ReturnType<typeof setTimeout>|undefined;
     setEvents([]);setState(null);setConnected(false);setPlayback(false);setReplaying(false);setCursor(-1);setSelectedStrategy(null);
     const add=(incoming:FactoryEvent[])=>{if(stopped)return;setEvents(old=>Array.from(new Map([...old,...incoming].map(e=>[e.id,e])).values()).sort((a,b)=>a.id-b.id).slice(-240));};
-    const load=async()=>{try{
-      const [sr,er]=await Promise.all([fetch(`${API}/api/factory/state?symbol=${symbol}&mode=${mode}`),fetch(`${API}/api/factory/events?symbol=${symbol}&mode=${mode}&limit=240`)]);
+    const load=async()=>{if(stopped||loading)return;loading=true;try{
+      const [sr,er]=await Promise.all([fetch(`${API}/api/factory/state?symbol=${symbol}&mode=${mode}`,{signal:AbortSignal.timeout(15000)}),fetch(`${API}/api/factory/events?symbol=${symbol}&mode=${mode}&limit=240`,{signal:AbortSignal.timeout(15000)})]);
       if(!sr.ok||!er.ok)throw new Error('Factory unavailable');
       const [s,e]=await Promise.all([sr.json(),er.json()]);
       if(!stopped){setState(s);add(e.events??[]);}
-    }catch{if(!stopped)setConnected(false);}};
+    }catch{if(!stopped)setConnected(false);}finally{loading=false;}};
     const connect=()=>{if(stopped)return;socket=new WebSocket(wsUrl(`/ws/factory?symbol=${symbol}&mode=${mode}`));
       socket.onopen=()=>{if(!stopped){setConnected(true);void load();}};
       socket.onmessage=m=>{if(stopped)return;try{const x=JSON.parse(m.data);if(x.events)add(x.events);}catch{}};
@@ -118,7 +118,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   };
   const impactIds=useMemo(()=>{if(!selectedAgent)return new Set<string>(); const map:Record<string,string[]>={atlas:["curie","judge","mnemosyne"],curie:["atlas","evolve"],evolve:["curie","forge"],forge:["evolve","judge"],judge:["forge","atlas","mnemosyne"],mnemosyne:["judge","atlas"],cerberus:["atlas","hermes"],hermes:["cerberus"]}; return new Set([selectedAgent,...(map[selectedAgent]??[])]);},[selectedAgent]);
   const inspect=async(id:string)=>{try{setSelectedStrategy(await fetch(`${API}/api/darwin/strategy/${encodeURIComponent(id)}?symbol=${symbol}&mode=${mode}`).then(r=>r.json()));}catch{}};
-  const prepareEngineerTask=async()=>{setEngineerBusy(true);try{await fetch(`${API}/api/engineer/task`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol,mode})});const fresh=await fetch(`${API}/api/factory/state?symbol=${symbol}&mode=${mode}`).then(r=>r.json());setState(fresh);}catch{}finally{setEngineerBusy(false)}};
+  const prepareEngineerTask=async()=>{setEngineerBusy(true);try{await fetch(`${API}/api/engineer/task`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol,mode})});const fresh=await fetch(`${API}/api/factory/state?symbol=${symbol}&mode=${mode}`,{signal:AbortSignal.timeout(15000)}).then(r=>r.json());setState(fresh);}catch{}finally{setEngineerBusy(false)}};
   if(!state)return <div className="factory-loading"><span>🏭</span><b>{connected?"Loading factory…":"Disconnected — reconnecting…"}</b></div>;
   const A=(id:string)=>state.agents.find(a=>a.id===id)!;
   const isDim=(id:string)=>!!selectedAgent&&!impactIds.has(id);

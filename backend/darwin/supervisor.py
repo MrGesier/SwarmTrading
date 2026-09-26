@@ -116,6 +116,11 @@ class DarwinSupervisor:
         return self.store.add_factory_event(event_type, payload or {}, agent_id=agent_id, strategy_id=strategy_id)
 
     def persist_trades(self) -> None:
+        baseline_rows = [r for a in self.baseline.accounts.values() for r in a.closed_trade_log]
+        if baseline_rows:
+            self.store.save_baseline_trades(baseline_rows)
+            for a in self.baseline.accounts.values():
+                a.closed_trade_log.clear()  # only after durable, deduplicated archival
         rows = [r for account in self.population.accounts.values() for r in account.closed_trade_log]
         if rows:
             self.store.save_trades(rows)

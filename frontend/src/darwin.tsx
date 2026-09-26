@@ -1,7 +1,7 @@
 import { SharedPortfolioPanel, type SharedPortfolioState } from "./portfolio";
 import { StrategyName, shortStrategy } from "./strategy-name";
 import { Help } from "./help";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { BrainCircuit, Crown, Database, Dna, FlaskConical, GitBranch, Hammer, RefreshCw, Scale, Send, ShieldAlert, ShieldCheck, Skull, Trophy, Zap } from "lucide-react";
 import { fmt, signed } from "./charts";
 import { API } from "./api";
@@ -184,13 +184,16 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
+  const refreshing = useRef(false);
   const refresh = useCallback(async () => {
+    if (refreshing.current) return;
+    refreshing.current = true;
     try {
       const [d, x, a, r] = await Promise.all([
-        fetch(`${API}/api/darwin/state?symbol=${symbol}&mode=${mode}`),
-        fetch(`${API}/api/execution/hyperliquid/status`),
-        fetch(`${API}/api/agents/state?symbol=${symbol}&mode=${mode}`),
-        fetch(`${API}/api/darwin/research?symbol=${symbol}&mode=${mode}`),
+        fetch(`${API}/api/darwin/state?symbol=${symbol}&mode=${mode}`,{signal:AbortSignal.timeout(15000)}),
+        fetch(`${API}/api/execution/hyperliquid/status`,{signal:AbortSignal.timeout(15000)}),
+        fetch(`${API}/api/agents/state?symbol=${symbol}&mode=${mode}`,{signal:AbortSignal.timeout(15000)}),
+        fetch(`${API}/api/darwin/research?symbol=${symbol}&mode=${mode}`,{signal:AbortSignal.timeout(15000)}),
       ]);
       if (!d.ok) throw new Error("Darwin state unavailable");
       setState(await d.json());
@@ -198,6 +201,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
       if (a.ok) setAgents(await a.json());
       if (r.ok) setResearch(await r.json());
     } catch (e) { setMessage(String(e)); }
+    finally { refreshing.current = false; }
   }, [symbol, mode]);
 
   useEffect(() => {

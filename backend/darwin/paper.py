@@ -6,6 +6,7 @@ lets a model invent fills, PnL, fees or positions.
 """
 from __future__ import annotations
 
+import json
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -352,14 +353,15 @@ class PaperPopulation:
             self.add_strategy(strategy)
 
     def snapshot(self) -> dict[str, Any]:
-        def plain(value):
-            if isinstance(value, (deque, list, tuple)):
-                return [plain(v) for v in value]
-            if isinstance(value, dict):
-                return {k: plain(v) for k, v in value.items()}
-            return value
-        return {"version": 1, "accounts": {sid: plain({k:v for k,v in vars(a).items() if k != "equity_curve"}) for sid, a in self.accounts.items()},
-                "benchmark": {k: getattr(self, k) for k in ("epoch_start_mid", "last_mid", "epoch_start_ts", "last_ts")}}
+        # The JSON encoder walks primitive trees in C; avoid a Python recursive
+        # walk over hundreds of thousands of historical numeric observations.
+        # Round-trip retains the detached snapshot contract, including nested lists.
+        raw = {"version": 1, "accounts": {sid: {k:v for k,v in vars(a).items() if k != "equity_curve"} for sid,a in self.accounts.items()},
+               "benchmark": {k:getattr(self,k) for k in ("epoch_start_mid","last_mid","epoch_start_ts","last_ts")}}
+        def encode(value):
+            if isinstance(value, deque): return list(value)
+            raise TypeError(f"Unsupported checkpoint type: {type(value).__name__}")
+        return json.loads(json.dumps(raw, default=encode))
 
     def restore(self, snapshot: dict[str, Any]) -> None:
         if snapshot.get("version") != 1:

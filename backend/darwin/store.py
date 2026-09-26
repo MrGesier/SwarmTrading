@@ -160,6 +160,14 @@ class DarwinStore:
             self._db.execute("DELETE FROM paper_trades WHERE rowid NOT IN (SELECT rowid FROM paper_trades ORDER BY closed_at DESC, rowid DESC LIMIT 10000)")
             self._db.commit()
 
+    def save_baseline_trades(self, rows: list[dict[str, Any]]) -> None:
+        """Archive control trades separately; never mix them with allocated trades."""
+        with self._lock:
+            self._db.execute("CREATE TABLE IF NOT EXISTS baseline_trades (strategy_id TEXT, opened_at REAL, closed_at REAL, payload TEXT, UNIQUE(strategy_id,opened_at,closed_at))")
+            self._db.executemany("INSERT OR IGNORE INTO baseline_trades VALUES(?,?,?,?)",
+                [(r["strategy_id"],r["opened_at"],r["closed_at"],json.dumps(r)) for r in rows])
+            self._db.commit()
+
     def recent_trades(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._lock:
             if not self._db.execute("SELECT 1 FROM sqlite_master WHERE name='paper_trades'").fetchone():
