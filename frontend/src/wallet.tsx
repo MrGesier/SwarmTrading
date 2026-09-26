@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Help } from "./help";
 import type { MetamaskConnectEVM } from "@metamask/connect-evm";
 import { API } from "./api";
+import { TestnetValidation } from "./testnet-validation";
 type Provider = {request: (args: {method: string}) => Promise<unknown>; isMetaMask?:boolean; on?:(event:string,handler:(value:unknown)=>void)=>void; removeListener?:(event:string,handler:(value:unknown)=>void)=>void};
 type Account = {address:string; network:string; observed_at:number; perps:{marginSummary?:{accountValue?:string}; assetPositions?:{position:{coin:string;szi:string;entryPx?:string;unrealizedPnl?:string}}[]}; spot:{balances?:{coin:string;total:string;hold:string}[]}; open_orders:{coin:string;side:string;sz:string;limitPx:string;oid:number}[]};
 const money = (value: unknown) => value == null ? "—" : Number.isFinite(Number(value)) ? Number(value).toLocaleString("fr-FR", {maximumFractionDigits:2}) : "—";
@@ -79,10 +80,6 @@ export function HyperliquidWallet() {
    <h4>Ordres ouverts : {account.open_orders.length}</h4><ul>{account.open_orders.slice(0,30).map(o=><li key={o.oid}>{o.coin} · {o.side==="B"?"achat":"vente"} · {o.sz} à {o.limitPx}</li>)}</ul>{account.open_orders.length>30&&<p>Affichage limité aux 30 premiers ordres.</p>}
    <p>Un compte vide peut être neuf, sur un autre réseau ou une autre adresse. Une réponse API ne prouve pas la propriété du compte.</p>
   </section>}
-  <details><summary>Et pour autoriser Darwin à trader plus tard ?</summary><ol>
-   <li>Valider d’abord les ordres, annulations, limites et rapprochements sur testnet. L’adaptateur existe, mais cette chaîne n’est pas validée de bout en bout.</li>
-   <li>Créer et approuver une API wallet dédiée sur l’interface officielle Hyperliquid lorsque l’intégration d’exécution sera prête. Sa clé restera locale, hors des agents et de la conversation.</li>
-   <li>Vérifier le plafond d’exposition, le funding et les frais, puis approuver séparément toute activation réelle. Connecter ton wallet ici n’active aucune de ces étapes.</li>
-  </ol><a href="https://app.hyperliquid.xyz" target="_blank" rel="noreferrer">Ouvrir Hyperliquid officiel ↗</a> · <a href="https://app.hyperliquid-testnet.xyz" target="_blank" rel="noreferrer">Ouvrir le testnet officiel ↗</a></details>
+  <TestnetValidation/>
  </section>;
 }

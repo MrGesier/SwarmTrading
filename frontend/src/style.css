@@ -2172,3 +2172,10 @@ footer i {
 .wallet-steps { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0; }
 .wallet-steps span { padding:14px;border:1px solid #67472f;border-radius:10px;display:grid;gap:8px; }
 @media(max-width:650px){.wallet-steps{grid-template-columns:1fr}.research-activity{padding:14px}.sidebar nav a {min-width:0;width:100%;}.sidebar .nav-advanced{display:none}.sidebar nav a>span:not(.nav-indicator){display:none}.sidebar nav a{font-size:0;}.sidebar nav a svg{min-width:20px}.factory-live{max-width:100%}}
+.testnet-validation{margin-top:2rem;padding:1.5rem;border:1px solid #594638;border-radius:18px;background:linear-gradient(140deg,#201b19,#101923);overflow-wrap:anywhere}
+.testnet-validation header p,.testnet-validation>p{line-height:1.55;color:#c9c1b9}
+.testnet-validation .wallet-steps{margin:1rem 0;flex-wrap:wrap;gap:1rem}
+.validation-checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.6rem;list-style:none;padding:0}
+.validation-checks span{color:#e6ae78}
+.testnet-validation article{border-top:1px solid #594638;padding:1rem 0}
+.testnet-validation input[type=checkbox]{width:auto;margin-right:.5rem}

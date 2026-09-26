@@ -355,3 +355,39 @@ Des comptes shadow gelés avant observation comparent quatre interventions penda
 `DARWIN_AUTO_CODE_RESEARCH=true` autorise le worker local à préparer au plus un candidat par jour lorsqu’un incident se répète sur deux cycles et que des observations Hyperliquid ont été enregistrées. Codex propose uniquement une fonction pure de filtrage du signal dans `research_policy.py`, isolée de l’exécution et inactive dans le moteur. Aucun défaut n’est injecté. La validation utilise le dernier segment des observations enregistrées, non transmis au modèle, ainsi que des contrats indépendants, les régressions et le build. Ce replay utilise de vraies observations ; il n’est pas une validation live future. Des échantillons courts restent explicitement insuffisants.
 
 `DARWIN_RESEARCH_CREATE_DRAFT_PR=true` autorise la publication d’une branche candidate et d’une PR brouillon après les tests via Git/gh déjà authentifiés. Les options automatiques de code/publication sont désactivées dans `.env.example` et doivent être activées localement. Aucune fusion, intégration ou activation du live. Un échec de publication reste visible et le candidat est conservé. Factory présente les lots, expériences comparatives, décisions, propositions et bilans des dernières 24 heures.
+
+
+### Manual Hyperliquid testnet validation
+
+The Hyperliquid page now includes a testnet-only preparation panel and an explicit
+order/cancel/reconciliation workflow. `/api/hyperliquid/validation/preflight` reads
+current public testnet book, account, fees, funding and approved API agents.
+The test requires a dedicated, approved, unexpired API wallet and a flat default
+perpetual account without open orders. It checks existing positions plus pending
+orders plus the proposed order against `HYPERLIQUID_MAX_NOTIONAL_USD`.
+
+Keep `HYPERLIQUID_ENABLED=false`. To run a manual test after configuring a testnet
+account, set `HYPERLIQUID_NETWORK=testnet` and
+`HYPERLIQUID_TESTNET_VALIDATION=true` locally, provide the account address and API
+wallet key in the existing local environment variables, and restart Darwin.
+Never paste the key into the UI, agents or a PR. Approve the API wallet yourself
+on the official Hyperliquid testnet API page. No key is generated, transported or
+stored by this UI. Merely connecting MetaMask does not approve the API wallet.
+
+The separate testnet endpoint recomputes checks, persists a unique client order
+ID, submits one buy limit order with `Alo` (post-only), attempts to cancel only
+that order, and reads back its status and account position. It uses the official
+SDK and a fixed testnet URL, regardless of the wallet viewer network selector.
+An unresolved/partially filled order blocks further tests; the reconciliation
+button cancels that same client order ID and checks again. It never liquidates a
+position automatically. Restart-interrupted tests remain in the SQLite journal
+and can be reconciled after two minutes. Unknown order identity remains blocked
+for manual investigation. The journal is `data/testnet-validation.sqlite` (or
+under `DARWIN_DATA_DIR`). These endpoints are local-only, not agent tools.
+
+Passing means this specific order was accepted, canceled, and left no position
+or open order on the inspected account scope. It does not validate market orders,
+liquidations, all failure modes, HIP-3/subaccount aggregation, profitability or
+mainnet readiness. The funding rate is displayed, not added to existing paper
+accounting. Mainnet activation remains a separate human decision; this panel
+cannot enable it. Software test doubles are not claimed as exchange validation.
