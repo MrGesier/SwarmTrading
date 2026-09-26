@@ -321,3 +321,10 @@ Les agents nécessitent un fournisseur LLM configuré. `enabled=true` signifie a
 ### Démonstration locale de correction de code V3
 
 Voir [DARWIN_DEMO_V3.md](DARWIN_DEMO_V3.md). `Demarrer-Darwin-Demo.cmd` lance la Factory et son worker séparé. La démo produit un vrai diff via Codex CLI (ou un mock explicitement étiqueté), exécute des tests indépendants et laisse la proposition en attente de revue. `Verifier-Darwin-Demo.cmd` expose l’état local. OpenRouter gratuit est préparé avec quota partagé ; aucune intégration de code ou activation du trading réel n’est automatique.
+
+
+### Fusion contrôlée de la PR V3
+
+`Fusionner-Darwin-PR2.cmd` vérifie la PR #2, ses validations et son commit exact, puis demande de saisir `FUSIONNER <SHA>` avant la demande de fusion. `Fusionner-Darwin-PR2.ps1 -VerifierSeulement` effectue les contrôles sans fusion. Le script utilise GitHub CLI et le helper installé du plugin PR Completion 0.3.0 ; il s’arrête si une dépendance ou une validation manque.
+
+Destination de cette fusion : `darwin-v0.11-factory-evolution`, pas `main`. La PR #1 vers `main` reste une étape distincte avec ses propres validations. Aucun code généré par une expérience isolée n’est intégré par ce script ; aucun déploiement ni trading réel n’est activé.

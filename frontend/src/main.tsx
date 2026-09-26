@@ -321,8 +321,8 @@ function App() {
         >
           <span className="brand-icon">
             <img
-              src="/swarm-trading-logo.png"
-              alt="Swarm Trading — symbole en rubans turquoise"
+              src="/swarm-flock.png"
+              alt="Swarm Trading — envolée origami cuivre et ivoire"
             />
           </span>
           <span>
