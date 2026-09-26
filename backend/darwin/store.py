@@ -138,6 +138,7 @@ class DarwinStore:
             # Forward-compatible V0.8 migration for existing SQLite memories.
             existing = {r[1] for r in self._db.execute("PRAGMA table_info(agent_runs)").fetchall()}
             for name, sql_type, default in [
+                ("audit_json", "TEXT", "'{}'"),
                 ("runtime", "TEXT", "''"),
                 ("provider", "TEXT", "''"),
                 ("reasoning_effort", "TEXT", "''"),
@@ -355,21 +356,21 @@ class DarwinStore:
         with self._lock:
             self._db.execute(
                 """INSERT INTO agent_runs(ts,agent_id,model,ok,latency_ms,prompt_tokens,completion_tokens,error,payload_json,
-                                           runtime,provider,reasoning_effort,prompt_version,estimated_cost_usd)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                           runtime,provider,reasoning_effort,prompt_version,estimated_cost_usd,audit_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (time.time(), result.get("agent_id", "unknown"), result.get("model", ""), 1 if result.get("ok") else 0,
                  int(result.get("latency_ms", 0)), result.get("prompt_tokens"), result.get("completion_tokens"),
                  str(result.get("error", ""))[:500], json.dumps(result.get("data", {}), separators=(",", ":"), default=str),
                  str(result.get("runtime", "")), str(result.get("provider", "")), str(result.get("reasoning_effort", "")),
-                 str(result.get("prompt_version", "")), result.get("estimated_cost_usd")),
+                 str(result.get("prompt_version", "")), result.get("estimated_cost_usd"), json.dumps(result.get("audit") or {}, default=str)),
             )
             self._db.commit()
 
-    def recent_agent_runs(self, limit: int = 30) -> list[dict[str, Any]]:
+    def recent_agent_runs(self, limit: int = 30, before_id: int | None = None) -> list[dict[str, Any]]:
         with self._lock:
-            rows = self._db.execute("SELECT * FROM agent_runs ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+            rows = self._db.execute("SELECT * FROM agent_runs WHERE id < ? ORDER BY id DESC LIMIT ?", (before_id if before_id is not None else 9223372036854775807, min(100, max(1, int(limit))))).fetchall()
         return [
-            {**dict(r), "ok": bool(r["ok"]), "payload": json.loads(r["payload_json"] or "{}")}
+            {**dict(r), "ok": bool(r["ok"]), "payload": json.loads(r["payload_json"] or "{}"), "audit": json.loads(r["audit_json"] or "{}")}
             for r in rows
         ]
 

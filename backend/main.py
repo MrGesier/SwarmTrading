@@ -462,6 +462,12 @@ async def darwin_memory(symbol: str='BTCUSDT', mode: str='live', limit: int=20):
     return dict(lessons=s.darwin.store.recent_lessons(max(1,min(limit,100))), epochs=s.darwin.store.recent_epochs(20))
 
 
+@app.get('/api/darwin/agent-runs')
+async def agent_run_history(symbol: str = 'BTCUSDT', mode: str = 'live', before_id: int | None = None):
+    rows = get_session(symbol, mode).darwin.store.recent_agent_runs(50, before_id)
+    return {'runs': rows, 'next_before_id': rows[-1]['id'] if len(rows) == 50 else None}
+
+
 @app.get('/api/darwin/research')
 async def darwin_research(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)

@@ -65,8 +65,11 @@ class LLMResult:
     prompt_version: str = "v1"
     estimated_cost_usd: float | None = None
 
+    audit: dict[str, Any] | None = None
+
     def to_dict(self) -> dict[str, Any]:
         return {
+            "audit": self.audit,
             "ok": self.ok,
             "agent_id": self.agent_id,
             "model": self.model,
@@ -183,6 +186,10 @@ class AgentBrain:
             prompt_version=self.prompt_version,
             estimated_cost_usd=estimate_cost_usd(self.model, prompt_tokens, completion_tokens),
         )
+        trace = self.provider_trace or {}
+        result.audit = {**getattr(self, "request_audit", {}),
+                        "provider_status": trace.get("status", "deterministic" if self.runtime == "deterministic" else "connected" if ok else "fallback"),
+                        "real_call": trace.get("real_call", True if ok and self.runtime != "deterministic" else None)}
         self.last_result = result
         return result
 
@@ -272,6 +279,9 @@ class AgentBrain:
         fallback: dict[str, Any],
     ) -> LLMResult:
         started = time.time()
+        self.provider_trace = None
+        self.request_audit = {"task": task, "context_keys": list(context),
+                              "context_preview": json.dumps(context)[:12000] if self.runtime == "openrouter-free" else self._context_text(context), "schema": schema_name}
         if self.runtime == "deterministic":
             return self._result(ok=True, data=fallback, started=started)
         if self.runtime == "openrouter-free" and self.enabled:

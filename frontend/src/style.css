@@ -2153,3 +2153,22 @@ footer i {
 .wallet-setup a { text-decoration: underline; color: #f0b47c; }
 .wallet-setup [role="alert"] { color: #ffbdab; margin: 16px 0; }
 @media(max-width:600px){ .wallet-setup { padding: 16px; } }
+
+.strategy-alias { display: inline-block; max-width: 100%; overflow-wrap: anywhere; font-size: .9em; }
+.research-activity { margin: 22px 0; padding: 22px; border: 1px solid #825337; border-radius: 18px; background: linear-gradient(125deg,#2d211a,#101923); }
+.research-activity header { display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between; margin-bottom:12px; }
+.research-activity header strong { color:#f2bc8f; }
+.research-activity h4 { margin:18px 0 10px; }
+.research-activity p { margin:12px 0; line-height:1.6; }
+.activity-filters { display:flex;gap:8px;margin:14px 0;flex-wrap:wrap; }
+.activity-filters button,.research-activity>button { background:#34271f; border:1px solid #8f6344; border-radius:8px;padding:8px 14px; }
+.activity-filters button[aria-pressed=true] { background:#925d38;color:#fff5e9; }
+.research-runs { max-height:520px;overflow:auto; }
+.research-runs>details,.mutation-ledger>details { padding:12px;border-bottom:1px solid #4b3a2e; }
+.research-runs summary { display:flex;gap:12px;flex-wrap:wrap;cursor:pointer; }
+.research-runs time { color:#c1b49f; }
+.run-kind { color:#f1bd8a; }
+.research-activity pre,.trade-journal pre { white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:12px;padding:12px;background:#10151c; }
+.wallet-steps { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0; }
+.wallet-steps span { padding:14px;border:1px solid #67472f;border-radius:10px;display:grid;gap:8px; }
+@media(max-width:650px){.wallet-steps{grid-template-columns:1fr}.research-activity{padding:14px}.sidebar nav a {min-width:0;width:100%;}.sidebar .nav-advanced{display:none}.sidebar nav a>span:not(.nav-indicator){display:none}.sidebar nav a{font-size:0;}.sidebar nav a svg{min-width:20px}.factory-live{max-width:100%}}

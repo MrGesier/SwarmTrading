@@ -86,6 +86,7 @@ def factory_state(supervisor: Any, agent_state: dict[str, Any], execution_state:
             "principle": "Models reason; code measures and gates capital.",
         },
         "research": {
+            "agent_runs": research.get("agent_runs", []),
             "eligible": (research.get("evidence") or {}).get("eligible", 0),
             "multiple_test_pass": (research.get("evidence") or {}).get("multiple_test_pass", 0),
             "family_cells": research.get("family_cells", [])[:8],

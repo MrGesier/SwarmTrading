@@ -1,3 +1,6 @@
+import { StrategyName, shortStrategy } from "./strategy-name";
+import { Help } from "./help";
+import {ResearchActivity} from "./research-activity";
 import {Autocorrection} from "./autocorrection";
 import React, { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Crown, FastForward, FlaskConical, Pause, Play, RotateCcw, Shield, Sparkles, Wrench, X } from "lucide-react";
@@ -57,7 +60,7 @@ const courierRoute=(type?:string)=>{
   return "core";
 };
 function EventCourier({event}:{event?:FactoryEvent}){if(!event)return null;return <div key={event.id} className={`event-courier route-${courierRoute(event.type)}`}><span>{eventToken[event.type]??"⚡"}</span><small>{event.type.replaceAll("_"," ")}</small></div>}
-function JudgeStamp({event}:{event?:FactoryEvent}){if(!event||event.type!=="judge_decision")return null;const d=String(event.payload?.decision??"WAIT").toUpperCase();return <div key={`judge-${event.id}`} className={`judge-stamp ${d.toLowerCase()}`}><b>{d}</b><small>{event.strategy_id??"strategy"}</small></div>}
+function JudgeStamp({event}:{event?:FactoryEvent}){if(!event||event.type!=="judge_decision")return null;const d=String(event.payload?.decision??"WAIT").toUpperCase();return <div key={`judge-${event.id}`} className={`judge-stamp ${d.toLowerCase()}`}><b>{d}</b><small>{<StrategyName id={event.strategy_id??"strategy"}/>}</small></div>}
 function CrownBurst({event}:{event?:FactoryEvent}){if(!event||event.type!=="champion_promoted")return null;return <div key={`crown-${event.id}`} className="crown-burst"><i>✨</i><i>👑</i><i>✨</i><i>★</i><i>✨</i></div>}
 
 function Sparkline({values,label}:{values:number[];label:string}){
@@ -106,7 +109,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const lastJudge=[...events].reverse().find(e=>e.type==="judge_decision");
   const selected=state?.agents.find(a=>a.id===selectedAgent)??null;
   const impactMetrics: Record<string,[string,string][]> = {
-    atlas:[["Champion",state?.champion?.id??"none"],["Population",String(state?.population??0)],["Experiments",String(state?.experiments.length??0)]],
+    atlas:[["Champion",state?.champion ? shortStrategy(state.champion.id) : "none"],["Population",String(state?.population??0)],["Experiments",String(state?.experiments.length??0)]],
     curie:[["Running experiments",String(state?.experiments.filter(x=>x.status==="RUNNING").length??0)],["Resolved",String(state?.experiments.filter(x=>x.status==="RESOLVED").length??0)],["Evidence ready",String(state?.research?.eligible??0)]],
     evolve:[["Challengers",String(state?.status_counts.CHALLENGER??0)],["Ever created",String(state?.historical_population??0)],["Mutation budget","controlled"]],
     forge:[["Paper accounts",String(state?.population??0)],["Market",state?.market.health??"WAITING"],["Regime",state?.market.regime??"WAITING"]],
@@ -129,18 +132,19 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const latestEvolution=evolution.latest??null;
   const evoDelta=evolution.deltas??{};
   const trend=String(evolution.trend??"WAITING");
+  const latestResearchRun=state.research?.agent_runs?.find((r:any)=>r.audit?.provider_status && r.audit.provider_status!=="deterministic");
   return <div className="factory-page">
     <header className="factory-hero">
-      <div className="darwin-identity"><img src="/darwin-owl.png" alt="Darwin — chouette terracotta" width="76" height="76"/><div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Recherche automatique</h2><p>Observer → sélectionner → muter → mesurer. Les cycles et les comparaisons montrent si les descendants progressent.</p></div></div>
+      <div className="darwin-identity"><img src="/darwin-owl.png" alt="Darwin — chouette terracotta" width="76" height="76"/><div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Recherche automatique <Help label="Recherche automatique" text="Les agents proposent des expériences à l’échéance du cycle. Le paper collecte entre les cycles ; les appels réels, caches, erreurs et changements sont visibles dans le journal de la boucle."/></h2><p>Observer → sélectionner → muter → mesurer. Les cycles et les comparaisons montrent si les descendants progressent.</p></div></div>
       <div className="factory-live"><span className="pulse-dot"/><b>{connected?state.market.health:"DISCONNECTED · RECONNECTING"}</b><small>{state.market.regime} · {state.symbol}</small></div>
     </header>
-    <p role="status">{state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Research provider configured · connection succeeds only after an actual run":"Recherche automatique déterministe · fournisseur IA indisponible"}</p>
+    <p role="status">{latestResearchRun?.audit?.provider_status==="quota"?"Dernier cycle : quota LLM atteint · propositions déterministes · voir le journal ci-dessous":state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Fournisseur IA configuré · chaque tentative et son résultat sont détaillés ci-dessous":"Recherche automatique déterministe · fournisseur IA indisponible"}</p>
     <div className="factory-strip">
       <div><small>POPULATION</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER??0} challengers</span></div>
-      <div><small>CHAMPION</small><b className="gold">{state.champion?.id??"No crown yet"}</b><span>{state.champion?.metrics?`${signed(state.champion.metrics.return_bps)} bp`:"collecting evidence"}</span></div>
+      <div><small>CHAMPION</small><b className="gold">{state.champion ? <StrategyName id={state.champion.id}/> : "No crown yet"}</b><span>{state.champion?.metrics?`${signed(state.champion.metrics.return_bps)} bp`:"collecting evidence"}</span></div>
       <div><small>MARKET</small><b>{signed(state.market.benchmark_return_bps)} bp</b><span>epoch benchmark</span></div>
 
-      <div><small>IA · COÛT ESTIMÉ 24H</small><b>${fmt(state.research?.llm_usage_24h?.estimated_cost_usd??0,4)}</b><span>{state.research?.llm_usage_24h?.calls??0} tentatives</span></div>
+      <div><small>IA · COÛT ESTIMÉ 24H</small><b>${fmt(state.research?.llm_usage_24h?.estimated_cost_usd??0,4)}</b><span>{state.research?.llm_usage_24h?.calls??0} résultats agents</span></div>
     </div>
 
     <section className="evolution-observatory pnl-panel" aria-label="Paper PnL">
@@ -163,6 +167,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <div><small>DERNIER CYCLE TERMINÉ</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
     </section>
     {state.cycle?.diagnosis?.actionable && <div className="darwin-message"><b>Problème détecté : {state.cycle.diagnosis.code==="FEE_DRAG"?"poids excessif des frais":"pertes généralisées"}</b><p>{state.cycle.diagnosis.fee_affected} stratégies affectées par les frais sur {state.cycle.diagnosis.eligible} évaluables. Un cycle anticipé sollicitera les agents, puis testera de nouveaux descendants. Une hypothèse n’est pas une correction validée.</p></div>}
+    <ResearchActivity key={`${symbol}-${mode}`} runs={state.research?.agent_runs??[]} experiments={state.experiments} cycle={state.cycle} symbol={symbol} mode={mode} events={events}/>
     <Autocorrection/>
     <section className="factory-shell">
       <aside className="factory-side left">
@@ -198,7 +203,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         </div>
         <div className="capital-boundary"><span>CAPITAL BOUNDARY</span><i/></div>
         <div className="factory-row bottom">
-          <div className="champion-pedestal"><Crown size={22}/><small>CHAMPION</small><b>{state.champion?.id??"empty"}</b></div>
+          <div className="champion-pedestal"><Crown size={22}/><small>CHAMPION</small><b>{state.champion ? <StrategyName id={state.champion.id}/> : "empty"}</b></div>
           <Conveyor label="validated intent" hot={activeAgent==="cerberus"}/>
           <Character agent={A("cerberus")} selected={selectedAgent==="cerberus"} active={activeAgent==="cerberus"} dimmed={isDim("cerberus")} onClick={()=>setSelectedAgent(selectedAgent==="cerberus"?null:"cerberus")}/>
           <Conveyor label={state.execution.ready?"ALLOW / BLOCK":"LOCKED"} hot={activeAgent==="hermes"}/>
@@ -210,7 +215,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <aside className="factory-side right">
         <div className="factory-panel-title"><Sparkles size={16}/> Impact inspector</div>
         {selected?<div className="impact-card" style={{"--agent":selected.color} as React.CSSProperties}><button onClick={()=>setSelectedAgent(null)}><X size={14}/></button><span className="impact-emoji">{persona[selected.id]?.emoji}<i>{persona[selected.id]?.badge}</i></span><h3>{selected.name}</h3><small>{persona[selected.id]?.title} · {selected.role}</small><p>{selected.function}</p><dl><dt>State</dt><dd>{selected.status}</dd><dt>Brain</dt><dd>{selected.llm?.runtime??selected.brain_status} · {selected.llm?.model??"code"}</dd><dt>Class</dt><dd>{selected.brain_class??"—"}</dd><dt>Capital</dt><dd>{selected.capital_permission}</dd></dl><div className="impact-metrics">{(impactMetrics[selected.id]??[]).map(([k,v])=><span key={k}><small>{k}</small><b>{v}</b></span>)}</div><h4>Inputs</h4><p>{selected.inputs.join(" · ")}</p><h4>Outputs</h4><p>{selected.outputs.join(" · ")}</p></div>:<div className="impact-empty"><span>👆</span><b>Click a character</b><p>Its dependencies, decisions and impact paths will light up.</p></div>}
-        {selectedStrategy&&<div className="strategy-pop"><button onClick={()=>setSelectedStrategy(null)}><X size={13}/></button><small>GENOME V{selectedStrategy.strategy.genome_version??2} INSPECTOR</small><b>{selectedStrategy.strategy.id}</b><p>{[...selectedStrategy.lineage].reverse().map((x:any)=><button key={x.id} onClick={()=>void inspect(x.id)}>{x.id} → </button>)}</p><div>Children: {(selectedStrategy.children??[]).map((id:string)=><button key={id} onClick={()=>void inspect(id)}>{id}</button>)}</div><span>{selectedStrategy.strategy.family} · {selectedStrategy.strategy.horizon}s · gen {selectedStrategy.strategy.generation}</span><div className="gene-grid">{geneCatalog.map((g:any)=><span key={g.name}><small>{g.label??g.name}</small><b>{fmt(selectedStrategy.strategy[g.name],g.kind==="int"?0:2)}{g.unit?` ${g.unit}`:""}</b></span>)}</div>{selectedStrategy.strategy.mutation?.parameter&&<div className="mutation-note"><small>LAST MUTATION</small><b>{selectedStrategy.strategy.mutation.parameter}</b><p>{String(selectedStrategy.strategy.mutation.from??"?")} → {String(selectedStrategy.strategy.mutation.to??"?")} · ×{fmt(selectedStrategy.strategy.mutation.factor,2)}</p></div>}</div>}
+        {selectedStrategy&&<div className="strategy-pop"><button onClick={()=>setSelectedStrategy(null)}><X size={13}/></button><small>GENOME V{selectedStrategy.strategy.genome_version??2} INSPECTOR</small><b>{<StrategyName id={selectedStrategy.strategy.id}/>}</b><p>{[...selectedStrategy.lineage].reverse().map((x:any)=><button key={x.id} onClick={()=>void inspect(x.id)}><StrategyName id={x.id}/> → </button>)}</p><div>Children: {(selectedStrategy.children??[]).map((id:string)=><button key={id} onClick={()=>void inspect(id)}><StrategyName id={id}/></button>)}</div><span>{selectedStrategy.strategy.family} · {selectedStrategy.strategy.horizon}s · gen {selectedStrategy.strategy.generation}</span><div className="gene-grid">{geneCatalog.map((g:any)=><span key={g.name}><small>{g.label??g.name}</small><b>{fmt(selectedStrategy.strategy[g.name],g.kind==="int"?0:2)}{g.unit?` ${g.unit}`:""}</b></span>)}</div>{selectedStrategy.strategy.mutation?.parameter&&<div className="mutation-note"><small>LAST MUTATION</small><b>{selectedStrategy.strategy.mutation.parameter}</b><p>{String(selectedStrategy.strategy.mutation.from??"?")} → {String(selectedStrategy.strategy.mutation.to??"?")} · ×{fmt(selectedStrategy.strategy.mutation.factor,2)}</p></div>}</div>}
       </aside>
     </section>
 

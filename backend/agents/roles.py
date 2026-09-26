@@ -23,7 +23,7 @@ class DarwinBrains:
         self.curie = AgentBrain(
             "curie",
             """You are CURIE, a skeptical quantitative scientist. Form one falsifiable local hypothesis from measured results and stored memory. Change one permitted variable at a time, keep mutations small, and explicitly avoid hindsight, multiple-testing traps and repeated failed experiments. You never place orders or promote strategies.""",
-            prompt_version="curie-v0.8",
+            prompt_version="curie-v0.12-trade-context",
         )
         self.evolve = AgentBrain(
             "evolve",
@@ -114,7 +114,7 @@ class DarwinBrains:
             "required": ["parameter", "factors", "hypothesis", "rationale", "confidence"],
         }
         return self.curie.ask_json(
-            task="Design exactly one controlled two-arm Genome V2 experiment around this parent. Change one permitted gene only, prefer small local mutations, use memory to avoid repeated failures, and make the hypothesis falsifiable.",
+            task="Design exactly one controlled two-arm Genome V2 experiment around this parent. Change one permitted gene only, prefer small local mutations, use memory to avoid repeated failures, and make the hypothesis falsifiable. Explicitly assess the supplied research_questions, fees, holding time and exit reasons in the rationale. Distinguish measured evidence from missing indicator ablations. Do not claim to introduce a new indicator or rewrite code.",
             context={"parent_result": parent_result, "recent_lessons": lessons[:12]},
             schema_name="curie_experiment",
             schema=schema,

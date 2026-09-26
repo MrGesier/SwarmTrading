@@ -333,3 +333,12 @@ Destination de cette fusion : `darwin-v0.11-factory-evolution`, pas `main`. La P
 ### Wallet Hyperliquid
 
 Ouvrir **Wallet Hyperliquid** ou `http://127.0.0.1:8000/hyperliquid` : connexion du wallet navigateur ou consultation d’une adresse publique, mainnet/testnet, positions perps principales, balances spot et ordres ouverts. Lecture seule sans signature, sans stockage de clé et sans activation du réel. Voir [HYPERLIQUID_WALLET.md](HYPERLIQUID_WALLET.md).
+
+
+### Journal de recherche et connexion MetaMask
+
+Factory affiche désormais les questions et aperçus de contexte conservés à chaque appel d’agent, ses réponses, son statut (appel réseau réel, cache, repli ou historique non instrumenté), ainsi que les hypothèses et décisions des expériences. Les questions CURIE portent explicitement sur les frais, la durée des positions, les sorties et la contribution non démontrée des indicateurs. Le contexte inclut les derniers trades conservés du parent (au plus 5 parmi les 500 clôtures récentes), sans prétendre constituer un échantillon complet ou une ablation. Les anciennes questions ne sont pas reconstruites.
+
+Les nouveaux trades enregistrent le régime et les indicateurs d’entrée, le brut avant frais et les excursions MAE/MFE sur les ticks observés au milieu du carnet. Les anciennes données restent inconnues. Ces attributs sont de la télémétrie : ils n’ajoutent pas de nouveaux gènes ni de preuve de rentabilité. Les noms courts sont des alias d’affichage ; les identifiants et la filiation sont inchangés.
+
+La connexion MetaMask utilise l’extension détectée ou le QR officiel pour mobile. Elle partage uniquement l’adresse permettant de consulter Hyperliquid ; le live reste désactivé. Voir [le parcours wallet](HYPERLIQUID_WALLET.md). Les propositions de code restent soumises à revue dans Autocorrection.

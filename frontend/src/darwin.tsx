@@ -1,3 +1,5 @@
+import { StrategyName, shortStrategy } from "./strategy-name";
+import { Help } from "./help";
 import React, { useCallback, useEffect, useState } from "react";
 import { BrainCircuit, Crown, Database, Dna, FlaskConical, GitBranch, Hammer, RefreshCw, Scale, Send, ShieldAlert, ShieldCheck, Skull, Trophy, Zap } from "lucide-react";
 import { fmt, signed } from "./charts";
@@ -94,7 +96,7 @@ type DarwinState = {
   status_counts: Record<string, number>;
   champion: Strategy | null;
   leaderboard: Leader[];
-  recent_trades?: Array<{strategy_id:string;opened_at:number|null;closed_at:number;direction:string;entry_mid:number|null;exit_mid:number;net_pnl_usd:number;fees_usd:number|null;reason:string}>;
+  recent_trades?: Array<{strategy_id:string;opened_at:number|null;closed_at:number;direction:string;entry_mid:number|null;exit_mid:number;net_pnl_usd:number;fees_usd:number|null;reason:string;entry_regime?:string;gross_pnl_usd?:number|null;mae_bps?:number|null;mfe_bps?:number|null;entry_context?:Record<string,number|null>}>;
   auto_epoch_enabled?: boolean;
   cycle?: {seconds_remaining: number; trigger: string};
   epoch_seconds: number;
@@ -258,7 +260,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
 
       <div className="darwin-kpis">
         <div><small>STRATÉGIES PAPER</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER ?? 0} challengers · {state.historical_population} ever created</span></div>
-        <div><small>CHAMPION</small><b className="positive">{state.champion?.id ?? "No promotion yet"}</b><span>{championMetric ? `${signed(championMetric.return_bps, 1)} bp · evidence ${pct(championMetric.evidence_weight)}` : "Waiting for sufficient evidence"}</span></div>
+        <div><small>CHAMPION</small><b className="positive">{state.champion ? <StrategyName id={state.champion.id}/> : "No promotion yet"}</b><span>{championMetric ? `${signed(championMetric.return_bps, 1)} bp · evidence ${pct(championMetric.evidence_weight)}` : "Waiting for sufficient evidence"}</span></div>
         <div><small>CAPITAL SIMULÉ / STRATÉGIE</small><b>${fmt(state.paper.notional_usd, 0)}</b><span>{fmt(state.paper.fee_bps, 1)} bp / fill</span></div>
         <div><small>PROCHAINE SÉLECTION</small><b>{duration(state.cycle?.seconds_remaining ?? Math.max(0, state.epoch_seconds - state.seconds_since_epoch))}</b><span>{state.cycle?.trigger==="AUTO_REPAIR"?"Cycle anticipé : problème détecté":`Cycle normal ${duration(state.epoch_seconds)}`}</span></div>
       </div>
@@ -286,16 +288,16 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
       <section className="darwin-card trade-journal">
         <div className="darwin-card-head"><span>Derniers trades paper clôturés</span><small>{state.symbol} · {state.mode} · toutes les stratégies</small></div>
         <p>Journal enregistré depuis cette mise à jour, conservé entre les cycles. Les anciennes opérations individuelles ne peuvent pas être reconstituées. Prix affichés : milieu du carnet, pas prix d'exécution.</p>
-        {!(state.recent_trades??[]).length?<p className="journal-empty">Aucune clôture journalisée pour le moment. Les positions ouvertes apparaissent dans le classement ; le journal se remplit automatiquement après clôture.</p>:<div className="darwin-table-wrap"><table className="darwin-table"><thead><tr><th>Clôture</th><th>Stratégie</th><th>Sens</th><th>Durée réelle</th><th>Entrée / sortie · prix repère</th><th>Net USD</th><th>Frais USD</th><th>Sortie</th></tr></thead><tbody>{(state.recent_trades??[]).slice(0,50).map((t,i)=><tr key={`${t.strategy_id}-${t.closed_at}-${i}`}><td>{new Date(t.closed_at*1000).toLocaleString()}</td><td><button className="strategy-name-button" onClick={()=>void inspectStrategy(t.strategy_id)}>{t.strategy_id}</button></td><td>{t.direction}</td><td>{t.opened_at==null?"—":`${Math.max(0,t.closed_at-t.opened_at).toFixed(1)} s`}</td><td>{t.entry_mid==null?"—":fmt(t.entry_mid,2)} / {fmt(t.exit_mid,2)}</td><td className={t.net_pnl_usd>=0?"positive":"negative"}>{signed(t.net_pnl_usd,2)}</td><td>{t.fees_usd==null?"—":fmt(t.fees_usd,2)}</td><td>{t.reason}</td></tr>)}</tbody></table></div>}
+        {!(state.recent_trades??[]).length?<p className="journal-empty">Aucune clôture journalisée pour le moment. Les positions ouvertes apparaissent dans le classement ; le journal se remplit automatiquement après clôture.</p>:<div className="darwin-table-wrap"><table className="darwin-table"><thead><tr><th>Clôture</th><th>Stratégie</th><th>Sens</th><th>Durée réelle <Help label="Durée réelle" text="Temps entre ouverture et clôture. Ce n’est pas l’horizon du signal."/></th><th>Entrée / sortie · prix repère</th><th>Net USD <Help label="Net USD" text="Résultat du trade après les frais modélisés. Funding et impact réel ne sont pas inclus."/></th><th>Frais USD <Help label="Frais USD" text="Somme des frais modélisés des fills du trade ou du cycle, selon le tableau."/></th><th>Sortie / contexte <Help label="Contexte du trade" text="Régime et indicateurs à l’entrée, PnL avant frais, excursion favorable (MFE) et défavorable (MAE), mesurées au milieu du carnet sur les ticks observés. Ces données ne sont pas reconstruites pour les anciens trades."/></th></tr></thead><tbody>{(state.recent_trades??[]).slice(0,50).map((t,i)=><tr key={`${t.strategy_id}-${t.closed_at}-${i}`}><td>{new Date(t.closed_at*1000).toLocaleString()}</td><td><button className="strategy-name-button" onClick={()=>void inspectStrategy(t.strategy_id)}>{<StrategyName id={t.strategy_id}/>}</button></td><td>{t.direction}</td><td>{t.opened_at==null?"—":`${Math.max(0,t.closed_at-t.opened_at).toFixed(1)} s`}</td><td>{t.entry_mid==null?"—":fmt(t.entry_mid,2)} / {fmt(t.exit_mid,2)}</td><td className={t.net_pnl_usd>=0?"positive":"negative"}>{signed(t.net_pnl_usd,2)}</td><td>{t.fees_usd==null?"—":fmt(t.fees_usd,2)}</td><td><details><summary>{t.reason}</summary><p>Régime : {t.entry_regime??"Non enregistré"}</p><p>Brut avant frais : {t.gross_pnl_usd==null?"—":fmt(t.gross_pnl_usd,2)} USD</p><p>MFE / MAE : {t.mfe_bps==null?"—":fmt(t.mfe_bps,2)} / {t.mae_bps==null?"—":fmt(t.mae_bps,2)} bp</p><pre>{t.entry_context?JSON.stringify(t.entry_context,null,2):"Contexte non enregistré pour cet ancien trade"}</pre></details></td></tr>)}</tbody></table></div>}
       </section>
       <div className="darwin-grid">
         <section className="darwin-card leaderboard-card">
           <div className="darwin-card-head"><span><Trophy size={16} /> Classement des stratégies paper</span><small>fenêtre courante · classement par score de recherche</small></div>
           <div className="darwin-table-wrap"><table className="darwin-table research-table">
             <caption>La fenêtre du signal (ex. 1 s) ne désigne pas la durée du trade. Plusieurs stratégies peuvent avoir une position en même temps, sur des comptes paper indépendants. Les compteurs repartent à zéro à chaque cycle. Une stratégie sans trade peut devancer une stratégie en perte. Cliquer sur son nom ouvre son historique de cycles.</caption>
-            <thead><tr><th>#</th><th>Stratégie</th><th>Fenêtre du signal / génération</th><th>PnL net USD</th><th>Rendement %</th><th>Frais USD</th><th>Trades clos · cycle / antérieurs</th><th>Position</th></tr></thead>
+            <thead><tr><th>#</th><th>Stratégie</th><th>Fenêtre du signal / génération</th><th>PnL net USD <Help label="PnL net USD" text="Gain ou perte du compte paper pour le cycle courant. Ce n’est pas le solde Hyperliquid."/></th><th>Rendement % <Help label="Rendement %" text="PnL du cycle divisé par le nominal paper de la stratégie. Aucun effet composé entre cycles."/></th><th>Frais USD <Help label="Frais USD" text="Somme des frais modélisés des fills du trade ou du cycle, selon le tableau."/></th><th>Trades clos · cycle / antérieurs</th><th>Position <Help label="Position" text="Exposition du compte paper indépendant : LONG, SHORT ou à plat."/></th></tr></thead>
             <tbody>{state.leaderboard.slice(0,20).map((r,i)=><tr key={r.strategy_id} className={r.status==="CHAMPION"?"champion-row":""}>
-              <td>{i+1}</td><td><button className="strategy-name-button" onClick={()=>void inspectStrategy(r.strategy_id)} title={r.strategy_id}>{r.family}<small>{r.strategy_id}</small></button></td>
+              <td>{i+1}</td><td><button className="strategy-name-button" onClick={()=>void inspectStrategy(r.strategy_id)} title={r.strategy_id}>{r.family}<small>{<StrategyName id={r.strategy_id}/>}</small></button></td>
               <td>{horizonLabel(r.horizon)} · G{r.generation}</td><td className={r.pnl>=0?"positive":"negative"}>{signed(r.pnl,2)}</td><td>{signed(r.return_bps/100,2)} %</td><td>{fmt(r.fees,2)}</td>
               <td>{r.closed_trades} / {r.lifetime?.lifetime_closed_trades??0}<small>{r.closed_trades===0?"Aucune clôture ce cycle":""}</small></td><td>{r.position>0?"LONG":r.position<0?"SHORT":"À plat"}</td>
             </tr>)}</tbody>
@@ -311,7 +313,7 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
       </div>
 
       {strategyDetail && <section className="darwin-card strategy-inspector">
-        <div className="darwin-card-head"><span><GitBranch size={16} /> Strategy inspector · <span className="mono">{strategyDetail.strategy.id}</span></span><button className="ghost-mini" onClick={() => setStrategyDetail(null)}>close</button></div>
+        <div className="darwin-card-head"><span><GitBranch size={16} /> Strategy inspector · <span className="mono"><StrategyName id={strategyDetail.strategy.id}/></span></span><button className="ghost-mini" onClick={() => setStrategyDetail(null)}>close</button></div>
         <div className="strategy-inspector-grid">
           <div><small>LINEAGE</small><p>{strategyDetail.lineage.map((x) => x.id).reverse().join(" → ")}</p><small>PARAMETERS</small><p>threshold {fmt(strategyDetail.strategy.threshold, 4)} · gain {fmt(strategyDetail.strategy.gain, 3)} · {strategyDetail.strategy.family} / {horizonLabel(strategyDetail.strategy.horizon)}</p></div>
           <div><small>HISTORICAL EPOCHS</small>{strategyDetail.history.length ? strategyDetail.history.slice(0, 8).map((h) => <div className="strategy-history-row" key={h.epoch_id}><b>#{h.epoch_id}</b><span className={h.return_bps >= 0 ? "positive" : "negative"}>{signed(h.return_bps, 1)} bp</span><span>DD {fmt(h.max_drawdown_bps, 1)}</span><span>{h.closed_trades} trades</span><em>{h.decision}</em></div>) : <p>No frozen epoch yet.</p>}</div>
@@ -322,13 +324,13 @@ export function DarwinLab({ symbol, mode }: { symbol: string; mode: string }) {
         <section className="darwin-card experiment-card">
           <div className="darwin-card-head"><span><FlaskConical size={16} /> Experiment ledger</span><small>CURIE → EVOLVE → evidence</small></div>
           <div className="experiment-list">{experiments.length ? experiments.slice(0, 12).map((exp) => <div key={exp.id} className={`experiment-row ${exp.status.toLowerCase()}`}>
-            <span className="experiment-id">#{exp.id}</span><div><b>{exp.parameter} × {exp.factors.map((x) => fmt(x, 3)).join(" / ")}</b><p>{exp.hypothesis}</p><small>parent <span className="mono">{exp.parent_id}</span> · {exp.child_ids.length} challengers · {Math.round(exp.confidence * 100)}% scientist confidence</small></div><span className="experiment-status">{exp.status}{exp.winner_id ? ` · ${exp.winner_id}` : ""}</span>
+            <span className="experiment-id">#{exp.id}</span><div><b>{exp.parameter} × {exp.factors.map((x) => fmt(x, 3)).join(" / ")}</b><p>{exp.hypothesis}</p><small>parent <span className="mono">{<StrategyName id={exp.parent_id}/>}</span> · {exp.child_ids.length} challengers · {Math.round(exp.confidence * 100)}% scientist confidence</small></div><span className="experiment-status">{exp.status}{exp.winner_id ? ` · ${shortStrategy(exp.winner_id)}` : ""}</span>
           </div>) : <p className="muted padded">No controlled experiment registered yet.</p>}</div>
         </section>
 
         <section className="darwin-card lifecycle-card">
           <div className="darwin-card-head"><span><Skull size={16} /> Selection history</span><small>{state.epochs.length} recent epochs</small></div>
-          {state.epochs.length ? state.epochs.map((e) => <div className="epoch-row" key={e.id}><b>#{e.id}</b><span>{e.champion_id ?? "No champion"}</span><small>{e.eligible} eligible · {e.killed} killed · {e.created} born</small></div>) : <p className="muted padded">No completed selection epoch yet.</p>}
+          {state.epochs.length ? state.epochs.map((e) => <div className="epoch-row" key={e.id}><b>#{e.id}</b><span>{<StrategyName id={e.champion_id}/>}</span><small>{e.eligible} eligible · {e.killed} killed · {e.created} born</small></div>) : <p className="muted padded">No completed selection epoch yet.</p>}
         </section>
       </div>
 

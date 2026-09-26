@@ -216,7 +216,16 @@ class DarwinSupervisor:
         fallback_plan = self.scientist.plan(parent_row, recent_lessons)
         fallback = fallback_plan.to_dict()
         self._emit("agent_started", {"task": "design controlled experiment"}, agent_id="curie", strategy_id=parent_row.get("strategy_id"))
-        result = self.brains.curie_plan({**parent_row, "measured_incident": self._repair_diagnosis}, recent_lessons, fallback)
+        recent_trades = [t for t in self.store.recent_trades(500)
+                         if t["strategy_id"] == parent_row.get("strategy_id")][:5]
+        result = self.brains.curie_plan({
+            # Put the research agenda before large histories in the provider's bounded context.
+            "research_questions": ["Are fees consuming the gross edge?", "Are holding duration and exit reasons consistent with the signal horizon?", "Would existing confirmation, cooldown or exit genes address observed churn?", "Which indicator contribution remains unproven without an ablation?"],
+            "feature_scope": "Existing families use returns, flow, microprice/spread and weighted imbalance. A current snapshot cannot establish their causal contribution. Only the eight existing genes are mutable.",
+            "market_snapshot": {k: (self._last_state or {}).get("features", {}).get(k) for k in ("weighted_imbalance", "flow", "spread", "volatility", "micro_delta")},
+            "recent_closed_trades": [{k: v for k, v in t.items() if k != "strategy_id"} for t in recent_trades],
+            **parent_row, "measured_incident": self._repair_diagnosis,
+        }, recent_lessons, fallback)
         self._remember_agent("curie", result)
         data = result.data if isinstance(result.data, dict) else fallback
         try:
