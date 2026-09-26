@@ -32,12 +32,14 @@ import {
 import "./style.css";
 import { Help } from "./help";
 import { Technical } from "./technical";
+import { HyperliquidWallet } from "./wallet";
 import { DarwinLab } from "./darwin";
 import { DarwinFactory } from "./factory";
 import { API, wsUrl } from "./api";
 const horizonLabel = (h: number) => (h >= 60 ? `${h / 60} min` : `${h}s`);
 
 const routes = [
+  { name: "Wallet Hyperliquid", icon: ShieldCheck, path: "/hyperliquid" },
   { name: "Marché", icon: Grid2X2, path: "/" },
   { name: "Diagnostic des signaux", icon: Zap, path: "/intent" },
   { name: "Population des signaux", icon: Workflow, path: "/research" },
@@ -334,7 +336,7 @@ function App() {
           DARWIN <span>V0.11</span>
         </div>
         <nav>
-          {routes.filter(r => ["/", "/darwin", "/factory"].includes(r.path)).map((r) => (
+          {routes.filter(r => ["/", "/darwin", "/factory", "/hyperliquid"].includes(r.path)).map((r) => (
             <a
               key={r.path}
               className={route === r.path ? "active" : ""}
@@ -349,7 +351,7 @@ function App() {
               {route === r.path && <span className="nav-indicator" />}
             </a>
           ))}
-          <details className="nav-advanced"><summary>Diagnostics avancés</summary>{routes.filter(r => !["/", "/darwin", "/factory"].includes(r.path)).map(r => <a key={r.path} href={r.path} className={route===r.path?"active":""} onClick={e=>{e.preventDefault();navigate(r.path)}}><r.icon size={16}/>{r.name}</a>)}</details>
+          <details className="nav-advanced"><summary>Diagnostics avancés</summary>{routes.filter(r => !["/", "/darwin", "/factory", "/hyperliquid"].includes(r.path)).map(r => <a key={r.path} href={r.path} className={route===r.path?"active":""} onClick={e=>{e.preventDefault();navigate(r.path)}}><r.icon size={16}/>{r.name}</a>)}</details>
         </nav>
         <div className="sidebar-note">
           <Layers3 size={19} />
@@ -407,7 +409,9 @@ function App() {
                 <span className="heading-dot" />
               </h1>
               <p>
-                {route === "/intent"
+                {route === "/hyperliquid"
+                  ? "Connectez une adresse publique et consultez votre compte, sans autoriser d’ordres."
+                  : route === "/intent"
                   ? "Explore the market states that could move the swarm."
                   : route === "/research"
                     ? "Inspect independent hypotheses and effective support."
@@ -527,7 +531,7 @@ function App() {
               {s.health.message || "Waiting for a consistent, fresh order book"}
             </div>
           )}
-          {!s ? (
+          {route === "/hyperliquid" ? <HyperliquidWallet /> : !s ? (
             <div className="empty">
               <Activity size={38} />
               <h2>Waiting for market state</h2>

@@ -328,3 +328,8 @@ Voir [DARWIN_DEMO_V3.md](DARWIN_DEMO_V3.md). `Demarrer-Darwin-Demo.cmd` lance la
 `Fusionner-Darwin-PR2.cmd` vérifie la PR #2, ses validations et son commit exact, puis demande de saisir `FUSIONNER <SHA>` avant la demande de fusion. `Fusionner-Darwin-PR2.ps1 -VerifierSeulement` effectue les contrôles sans fusion. Le script utilise GitHub CLI et le helper installé du plugin PR Completion 0.3.0 ; il s’arrête si une dépendance ou une validation manque.
 
 Destination de cette fusion : `darwin-v0.11-factory-evolution`, pas `main`. La PR #1 vers `main` reste une étape distincte avec ses propres validations. Aucun code généré par une expérience isolée n’est intégré par ce script ; aucun déploiement ni trading réel n’est activé.
+
+
+### Wallet Hyperliquid
+
+Ouvrir **Wallet Hyperliquid** ou `http://127.0.0.1:8000/hyperliquid` : connexion du wallet navigateur ou consultation d’une adresse publique, mainnet/testnet, positions perps principales, balances spot et ordres ouverts. Lecture seule sans signature, sans stockage de clé et sans activation du réel. Voir [HYPERLIQUID_WALLET.md](HYPERLIQUID_WALLET.md).

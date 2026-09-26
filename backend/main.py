@@ -306,6 +306,8 @@ hyperliquid_executor = HyperliquidExecutor()
 
 app = FastAPI(title='SwarmTrade V0.11 OpenAI Brain + OpenBot Bridge', lifespan=lifespan)
 from demo_api import create_demo_router
+from wallet_api import create_wallet_router
+app.include_router(create_wallet_router())
 def select_research_provider(provider):
     os.environ['DARWIN_RESEARCH_PROVIDER']=provider
     cognitive=('atlas','curie','evolve','judge','mnemosyne')

@@ -131,7 +131,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const trend=String(evolution.trend??"WAITING");
   return <div className="factory-page">
     <header className="factory-hero">
-      <div className="darwin-identity"><img src="/darwin-fox.png" alt="Darwin — renard origami" width="76" height="76"/><div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Recherche automatique</h2><p>Observer → sélectionner → muter → mesurer. Les cycles et les comparaisons montrent si les descendants progressent.</p></div></div>
+      <div className="darwin-identity"><img src="/darwin-owl.png" alt="Darwin — chouette terracotta" width="76" height="76"/><div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Recherche automatique</h2><p>Observer → sélectionner → muter → mesurer. Les cycles et les comparaisons montrent si les descendants progressent.</p></div></div>
       <div className="factory-live"><span className="pulse-dot"/><b>{connected?state.market.health:"DISCONNECTED · RECONNECTING"}</b><small>{state.market.regime} · {state.symbol}</small></div>
     </header>
     <p role="status">{state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Research provider configured · connection succeeds only after an actual run":"Recherche automatique déterministe · fournisseur IA indisponible"}</p>
