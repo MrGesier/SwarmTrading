@@ -59,6 +59,9 @@ class PaperAccount:
     episode_regime: str | None = None
     episode_opened_at: float | None = None
     episode_entry_mid: float | None = None
+    episode_entry_context: dict | None = None
+    episode_mae_bps: float | None = None
+    episode_mfe_bps: float | None = None
     last_closed_at: float | None = None
     confirmation_direction: int = 0
     confirmation_count: int = 0
@@ -131,6 +134,9 @@ class PaperAccount:
             "direction": "LONG" if side < 0 else "SHORT",
             "entry_mid": self.episode_entry_mid, "exit_mid": float(state["features"]["mid"]),
             "net_pnl_usd": pnl,
+            "gross_pnl_usd": pnl + self.fees - self.episode_start_fees if self.episode_start_fees is not None else None,
+            "entry_regime": self.episode_regime, "entry_context": self.episode_entry_context,
+            "mae_bps": self.episode_mae_bps, "mfe_bps": self.episode_mfe_bps,
             "fees_usd": self.fees - self.episode_start_fees if self.episode_start_fees is not None else None,
             "reason": reason})
         self.last_closed_at = close_ts
@@ -156,6 +162,9 @@ class PaperAccount:
             self.episode_regime = str(state.get("regime") or "UNKNOWN")
             self.episode_opened_at = float(state["timestamp"])
             self.episode_entry_mid = mid
+            self.episode_mae_bps = self.episode_mfe_bps = 0.0
+            self.episode_entry_context = {k: state["features"].get(k) for k in ("spread", "weighted_imbalance", "flow", "volatility")}
+            self.episode_entry_context["signal"] = self.last_signal
             return True
         return False
 
@@ -199,6 +208,10 @@ class PaperAccount:
         take_profit = float(self.strategy["take_profit_bps"])
         confirmation_ticks = int(self.strategy["confirmation_ticks"])
 
+        if self.position and self.episode_mae_bps is not None:
+            adverse, favourable = self._adverse_favourable_bps(mid)
+            self.episode_mae_bps = max(self.episode_mae_bps, adverse)
+            self.episode_mfe_bps = max(self.episode_mfe_bps or 0.0, favourable)
         if risk_off:
             self._update_confirmation(0)
             if self.position != 0:

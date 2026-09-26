@@ -65,8 +65,11 @@ class LLMResult:
     prompt_version: str = "v1"
     estimated_cost_usd: float | None = None
 
+    audit: dict[str, Any] | None = None
+
     def to_dict(self) -> dict[str, Any]:
         return {
+            "audit": self.audit,
             "ok": self.ok,
             "agent_id": self.agent_id,
             "model": self.model,
@@ -97,9 +100,13 @@ class AgentBrain:
         self.system_prompt = system_prompt
         self.prompt_version = prompt_version
         defaults = BRAIN_DEFAULTS[agent_id]
-        self.runtime = os.getenv(f"DARWIN_BRAIN_{agent_id.upper()}", defaults["runtime"]).strip().lower()
+        default_runtime = defaults["runtime"] if defaults["runtime"] == "deterministic" else os.getenv("DARWIN_RESEARCH_PROVIDER", defaults["runtime"])
+        self.runtime = os.getenv(f"DARWIN_BRAIN_{agent_id.upper()}", default_runtime).strip().lower()
+        self.provider_trace = None
         self.enabled = os.getenv("DARWIN_LLM_ENABLED", "true").lower() in {"1", "true", "yes"}
         self.model = os.getenv(f"DARWIN_MODEL_{agent_id.upper()}", defaults["model"]).strip()
+        if self.runtime == "openrouter-free":
+            self.model = os.getenv("OPENROUTER_FREE_MODEL", "unselected :free model")
         self.reasoning_effort = os.getenv(f"DARWIN_REASONING_{agent_id.upper()}", defaults["reasoning"]).strip().lower()
         self.timeout = float(os.getenv("DARWIN_LLM_TIMEOUT_SECONDS", "60"))
         self.max_context_chars = int(os.getenv("DARWIN_LLM_MAX_CONTEXT_CHARS", "60000"))
@@ -113,6 +120,8 @@ class AgentBrain:
 
     @property
     def provider(self) -> str:
+        if self.runtime in {"openrouter-free", "ollama"}:
+            return self.runtime
         if self.runtime == "gateway":
             return "vercel-ai-gateway"
         if self.runtime == "deterministic":
@@ -125,6 +134,10 @@ class AgentBrain:
             return True
         if not self.enabled:
             return False
+        if self.runtime == "openrouter-free":
+            return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
+        if self.runtime == "ollama":
+            return False  # prepared selector; no local inference installed in V3
         if self.runtime == "gateway":
             return bool(self.gateway_api_key)
         return bool(self.openai_api_key)
@@ -137,6 +150,7 @@ class AgentBrain:
         return {
             "enabled": self.enabled if self.runtime != "deterministic" else True,
             "available": self.available,
+            "unavailable_reason": None if self.available else "DISABLED" if not self.enabled else "MISSING_API_KEY",
             "runtime": self.runtime,
             "provider": self.provider,
             "model": self.model,
@@ -144,6 +158,7 @@ class AgentBrain:
             "prompt_version": self.prompt_version,
             "authority": self.authority,
             "last": self.last_result.to_dict() if self.last_result else None,
+            "provider_trace": self.provider_trace,
         }
 
     def _result(
@@ -171,6 +186,10 @@ class AgentBrain:
             prompt_version=self.prompt_version,
             estimated_cost_usd=estimate_cost_usd(self.model, prompt_tokens, completion_tokens),
         )
+        trace = self.provider_trace or {}
+        result.audit = {**getattr(self, "request_audit", {}),
+                        "provider_status": trace.get("status", "deterministic" if self.runtime == "deterministic" else "connected" if ok else "fallback"),
+                        "real_call": trace.get("real_call", True if ok and self.runtime != "deterministic" else None)}
         self.last_result = result
         return result
 
@@ -260,8 +279,20 @@ class AgentBrain:
         fallback: dict[str, Any],
     ) -> LLMResult:
         started = time.time()
+        self.provider_trace = None
+        self.request_audit = {"task": task, "context_keys": list(context),
+                              "context_preview": json.dumps(context)[:12000] if self.runtime == "openrouter-free" else self._context_text(context), "schema": schema_name}
         if self.runtime == "deterministic":
             return self._result(ok=True, data=fallback, started=started)
+        if self.runtime == "openrouter-free" and self.enabled:
+            from .openrouter_free import FreeProvider
+            self.provider_trace = FreeProvider().ask(system=self.system_prompt,task=task,context=context,schema=schema, **({"purpose":"incident"} if context.get("budget_priority")=="incident" else {}))
+            self.model = self.provider_trace.get("model") or "unselected :free model"
+            ok = self.provider_trace["status"] in {"connected", "cached"}
+            return self._result(ok=ok,data=self.provider_trace.get("data",fallback),started=started,
+                error="" if ok else self.provider_trace["status"]+": "+self.provider_trace.get("reason",""),
+                prompt_tokens=(self.provider_trace.get("usage") or {}).get("prompt_tokens"),
+                completion_tokens=(self.provider_trace.get("usage") or {}).get("completion_tokens"))
         if not self.available:
             key_name = "OPENAI_API_KEY" if self.runtime == "openai" else "AI_GATEWAY_API_KEY / VERCEL_OIDC_TOKEN"
             return self._result(

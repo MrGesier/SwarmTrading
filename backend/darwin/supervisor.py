@@ -5,6 +5,8 @@ responsible for numerical truth, strategy bounds, paper accounting and risk.
 """
 from __future__ import annotations
 
+import asyncio
+
 import os
 import time
 from pathlib import Path
@@ -13,6 +15,8 @@ from typing import Any
 from agents import DarwinBrains
 from agents.codex_engineer import CodexEngineer
 from engine import GENOMES
+from .autonomy import diagnose
+from .research_lab import ResearchLab
 from .judge import JudgeConfig, judge
 from .genome import MUTABLE_GENES, gene_catalog, upgrade_genome
 from .memory import write_epoch_memory
@@ -44,6 +48,7 @@ class DarwinSupervisor:
             fee_bps=self.population.fee_bps, fee_stress_multiplier=self.population.fee_stress_multiplier)
         if checkpoint and checkpoint.get("fixed_g0"):
             self.baseline.restore(checkpoint["fixed_g0"])
+        self.lab = ResearchLab(data_dir / f"research-lab-{mode}-{symbol}.sqlite",self.population.notional_usd,self.population.fee_bps)
         self.cfg = JudgeConfig(
             min_sample_seconds=float(os.getenv("DARWIN_MIN_SAMPLE_SECONDS", "300")),
             min_closed_trades=int(os.getenv("DARWIN_MIN_CLOSED_TRADES", "5")),
@@ -58,6 +63,10 @@ class DarwinSupervisor:
         self.auto_epoch_enabled = os.getenv("DARWIN_AUTO_EPOCH_ENABLED", "true").lower() in {"1", "true", "yes"}
         recent = self.store.recent_epochs(1)
         self.last_epoch = float(recent[0]["ts"]) if recent else self.store.initial_epoch_time()
+        self.repair_enabled = os.getenv("DARWIN_AUTO_REPAIR_ENABLED", "true").lower() in {"1", "true", "yes"}
+        self.repair_interval = max(1800.0, float(os.getenv("DARWIN_REPAIR_INTERVAL_SECONDS", "3600")))
+        self._repair_diagnosis = {}
+        self._diagnosed_at = 0.0
         self._retry_epoch_at = 0.0
         self._last_state: dict[str, Any] | None = None
         self.scientist = ScientistAgent()  # deterministic fallback / validator
@@ -73,10 +82,18 @@ class DarwinSupervisor:
         self._emit("factory_started", {"population": len(self.population.accounts)}, agent_id="atlas")
 
     def observe(self, state: dict[str, Any]) -> None:
+        if getattr(self, "_epoch_running", False):
+            return  # Flat accounts between windows; never count unobserved research time.
         self._last_state = state
         self.population.observe(state)
         self.baseline.observe(state)
+        self.lab.observe(state, [a.strategy for a in self.baseline.accounts.values()])
         now = time.time()
+        if now - self._diagnosed_at >= 60:
+            self._repair_diagnosis = diagnose(self.population.metrics(),
+                min_seconds=max(1800, self.cfg.min_sample_seconds), min_trades=max(20, self.cfg.min_closed_trades))
+            self._diagnosed_at = now
+            self.lab.maybe_queue_code(self)
         if now - self._last_pnl_record >= 60:
             self.store.record_pnl(self.pnl_state())
             self._last_pnl_record = now
@@ -144,10 +161,13 @@ class DarwinSupervisor:
     def cycle_state(self, rows=None) -> dict[str, Any]:
         rows = self.population.metrics() if rows is None else rows
         eligible = sum(r["sample_seconds"] >= self.cfg.min_sample_seconds and r["closed_trades"] >= self.cfg.min_closed_trades for r in rows)
-        remaining = max(0.0, self.last_epoch + self.epoch_seconds - time.time())
-        status = "DISABLED" if not self.auto_epoch_enabled else "COLLECTING" if remaining else "READY" if eligible else "WAITING_EVIDENCE"
+        deadline = self.next_research_at()
+        remaining = max(0.0, deadline - time.time())
+        status = "RESEARCH_RUNNING" if getattr(self, "_epoch_running", False) else "DISABLED" if not self.auto_epoch_enabled else "COLLECTING" if remaining else "READY" if eligible else "WAITING_EVIDENCE"
         recent = self.store.recent_epochs(1)
-        return {"status": status, "next_at": self.last_epoch + self.epoch_seconds,
+        return {"status": status, "next_at": deadline,
+                "trigger": "AUTO_REPAIR" if self.repair_actionable() else "SCHEDULED",
+                "diagnosis": self._repair_diagnosis,
                 "seconds_remaining": remaining, "eligible": eligible, "population": len(rows),
                 "min_sample_seconds": self.cfg.min_sample_seconds, "min_closed_trades": self.cfg.min_closed_trades,
                 "last_epoch": recent[0] if recent else None,
@@ -177,8 +197,15 @@ class DarwinSupervisor:
                 "uncertainty": "Not estimated. Correlated strategies and adaptive selection; future-window descriptive evidence, not independent proof.",
                 "reason": "Full frozen G0 versus every descendant evaluated before this epoch's selection." if matched else "Waiting for descendants and a complete common observation window; historical results are not reconstructed."}
 
+    def repair_actionable(self) -> bool:
+        return self.repair_enabled and bool(self._repair_diagnosis.get("actionable"))
+
+    def next_research_at(self) -> float:
+        interval = min(self.epoch_seconds, self.repair_interval) if self.repair_actionable() else self.epoch_seconds
+        return self.last_epoch + interval
+
     def due(self) -> bool:
-        return self.auto_epoch_enabled and time.time() >= self._retry_epoch_at and time.time() - self.last_epoch >= self.epoch_seconds
+        return self.auto_epoch_enabled and time.time() >= max(self._retry_epoch_at, self.next_research_at())
 
     def _remember_agent(self, agent_id: str, result: Any) -> None:
         try:
@@ -193,7 +220,16 @@ class DarwinSupervisor:
         fallback_plan = self.scientist.plan(parent_row, recent_lessons)
         fallback = fallback_plan.to_dict()
         self._emit("agent_started", {"task": "design controlled experiment"}, agent_id="curie", strategy_id=parent_row.get("strategy_id"))
-        result = self.brains.curie_plan(parent_row, recent_lessons, fallback)
+        recent_trades = [t for t in self.store.recent_trades(500)
+                         if t["strategy_id"] == parent_row.get("strategy_id")][:5]
+        result = self.brains.curie_plan({
+            # Put the research agenda before large histories in the provider's bounded context.
+            "research_questions": ["Are fees consuming the gross edge?", "Are holding duration and exit reasons consistent with the signal horizon?", "Would existing confirmation, cooldown or exit genes address observed churn?", "Which indicator contribution remains unproven without an ablation?"],
+            "feature_scope": "Existing families use returns, flow, microprice/spread and weighted imbalance. A current snapshot cannot establish their causal contribution. Only the eight existing genes are mutable.",
+            "market_snapshot": {k: (self._last_state or {}).get("features", {}).get(k) for k in ("weighted_imbalance", "flow", "spread", "volatility", "micro_delta")},
+            "recent_closed_trades": [{k: v for k, v in t.items() if k != "strategy_id"} for t in recent_trades],
+            **parent_row, "measured_incident": self._repair_diagnosis,
+        }, recent_lessons, fallback)
         self._remember_agent("curie", result)
         data = result.data if isinstance(result.data, dict) else fallback
         try:
@@ -236,9 +272,47 @@ class DarwinSupervisor:
             return plan
 
     def run_epoch(self, *, force: bool = False) -> dict[str, Any]:
-        if not force and not self.due():
-            return {"ran": False, "seconds_until_next": max(0.0, self.epoch_seconds - (time.time() - self.last_epoch))}
+        """Synchronous driver for offline regression/replay only."""
+        if getattr(self, '_epoch_running', False):return {'ran':False,'reason':'RESEARCH_RUNNING'}
+        self._epoch_running=True
+        steps=self._epoch_steps(force=force)
+        value=None
+        try:
+            while True:
+                try:operation=steps.send(value)
+                except StopIteration as done:return done.value
+                value=operation()
+        finally:
+            steps.close()
+            self._epoch_running=False
 
+    async def run_epoch_async(self, *, force: bool = False) -> dict[str, Any]:
+        """Keep market/websocket event loop responsive while advisory models work."""
+        if getattr(self, '_epoch_running', False):return {'ran':False,'reason':'RESEARCH_RUNNING'}
+        self._epoch_running=True
+        steps=self._epoch_steps(force=force)
+        value=None
+        try:
+            while True:
+                try:operation=steps.send(value)
+                except StopIteration as done:return done.value
+                pending=asyncio.create_task(asyncio.to_thread(operation))
+                try:value=await asyncio.shield(pending)
+                except asyncio.CancelledError:
+                    # Do not resume paper while a model callback is still running.
+                    await pending
+                    raise
+        finally:
+            steps.close()
+            self._epoch_running=False
+
+    def _epoch_steps(self, *, force: bool = False):
+        if not force and not self.due():
+            return {"ran": False, "seconds_until_next": max(0.0, self.next_research_at() - time.time())}
+
+        trigger = "AUTO_REPAIR" if self.repair_actionable() else "MANUAL" if force else "SCHEDULED"
+        if trigger == "AUTO_REPAIR":
+            self._emit("research_incident", self._repair_diagnosis, agent_id="atlas")
         self._emit("epoch_started", {"force": force, "population": len(self.population.accounts)}, agent_id="atlas")
         preliminary = self.population.metrics(include_killed=False)
         prelim_eligible = [
@@ -274,12 +348,10 @@ class DarwinSupervisor:
         evaluations, champion_id = judge(rows, self.cfg)
         strategy_map = {s["id"]: s for s in self.store.strategies(include_killed=True)}
 
-        self._emit("agent_started", {"task": "audit frozen deterministic selection"}, agent_id="judge")
-        judge_audit = self.brains.judge_audit(evaluations, champion_id)
-        self._remember_agent("judge", judge_audit)
-        self._emit("agent_started", {"task": "audit paper execution environment"}, agent_id="forge")
-        forge_audit = self.brains.forge_audit(self._last_state or {}, rows)
-        self._remember_agent("forge", forge_audit)
+        # Numerical JUDGE remains authoritative. Critique only a promising measured candidate.
+        if any(r.get("multiple_test_pass") and r.get("return_bps",0)>0 and r.get("generation",0)>0 for r in evaluations) and self.lab.critique_due():
+            judge_audit = yield lambda: self.brains.judge_audit(evaluations, champion_id)
+            self._remember_agent("judge", judge_audit)
 
         for row in evaluations:
             sid = row["strategy_id"]
@@ -303,6 +375,15 @@ class DarwinSupervisor:
             key=lambda r: r["fitness"],
             reverse=True,
         )[:6]
+        # Repair losing, evidence-rich parents as fresh challengers; do not revive
+        # a killed account or let an LLM override its numerical verdict.
+        if trigger == "AUTO_REPAIR":
+            affected = set(self._repair_diagnosis.get("affected_ids", []))
+            repair_rows = sorted((r for r in evaluations if r["strategy_id"] in affected and r.get("eligible")),
+                                 key=lambda r: r["pnl"])
+            ranked = list({r["strategy_id"]: r for r in repair_rows[:3] + ranked}.values())[:6]
+        for candidate in ranked:
+            candidate["measured_incident"] = self._repair_diagnosis
         def diverse(ids: list[str]) -> list[str]:
             result: list[str] = []
             seen_cells: set[tuple[str, int]] = set()
@@ -320,17 +401,8 @@ class DarwinSupervisor:
             return result
 
         selected_ids: list[str] = diverse([r["strategy_id"] for r in ranked])
-        if ranked:
-            self._emit("agent_started", {"task": "select diverse experiment parents"}, agent_id="atlas")
-            atlas = self.brains.select_parents(ranked, recent_lessons)
-            self._remember_agent("atlas", atlas)
-            allowed = {r["strategy_id"] for r in ranked}
-            proposed = atlas.data.get("selected_strategy_ids", []) if isinstance(atlas.data, dict) else []
-            valid = diverse([sid for sid in proposed if sid in allowed])
-            if valid:
-                # Preserve diversity even if ATLAS proposes several near-identical parents.
-                selected_ids = valid + [sid for sid in selected_ids if sid not in valid]
-                selected_ids = diverse(selected_ids)
+        selected_rows=[r for r in ranked if r["strategy_id"] in selected_ids]
+        plans = yield lambda: self.lab.batch(self, selected_rows, recent_lessons)
 
         row_by_id = {r["strategy_id"]: r for r in evaluations}
         for parent_id in selected_ids:
@@ -338,8 +410,7 @@ class DarwinSupervisor:
             parent = strategy_map.get(parent_id)
             if not parent_row or not parent:
                 continue
-            plan = self._validated_plan(parent_row, recent_lessons)
-            plan = self._evolve_plan(parent, plan)
+            plan = plans.get(parent_id) or self.scientist.plan(parent_row, recent_lessons)
             plan = self.novel_plan(parent, plan)
             plan_row = {"parent_id": parent["id"], **plan.to_dict()}
             experiment_plans.append(plan_row)
@@ -384,6 +455,8 @@ class DarwinSupervisor:
             "max_active_strategies": self.max_active_strategies,
             "max_new_per_epoch": self.max_new_per_epoch,
             "auto_epoch_enabled": self.auto_epoch_enabled,
+            "research_trigger": trigger,
+            "measured_incident": self._repair_diagnosis,
             "benchmark": benchmark,
             "fixed_baseline": comparison,
             "genome_version": 2,
@@ -408,17 +481,10 @@ class DarwinSupervisor:
 
         # Keep deterministic lessons and add an LLM-compressed lesson separately.
         write_epoch_memory(self.store, evaluations, champion_id)
-        self._emit("agent_started", {"task": "compress evidence into memory"}, agent_id="mnemosyne", strategy_id=champion_id)
-        memory = self.brains.memory_lesson(evaluations, champion_id, experiment_plans)
-        self._remember_agent("mnemosyne", memory)
-        if isinstance(memory.data, dict):
-            self.store.add_lesson(
-                "llm_epoch",
-                memory.data,
-                strategy_id=champion_id,
-                confidence=float(memory.data.get("confidence", 0.2) or 0.2),
-            )
-            self._emit("lesson_saved", {"confidence": float(memory.data.get("confidence", 0.2) or 0.2), "lesson": memory.data}, agent_id="mnemosyne", strategy_id=champion_id)
+        self.lab.record("epoch_report", {"epoch_id":epoch_id,"created":created,
+            "retired":sum(r["decision"]=="KILL" for r in evaluations),"resolved":resolved_experiments,
+            "comparison":comparison,"incident":self._repair_diagnosis,
+            "next_experiments":experiment_plans,"interpretation":"Paper evidence only; new mutations and passing tests do not establish improvement."})
 
         self._emit("epoch_completed", {"epoch_id": epoch_id, "champion_id": champion_id, "created": created, "killed": sum(r["decision"] == "KILL" for r in evaluations), "resolved_experiments": resolved_experiments}, agent_id="atlas", strategy_id=champion_id)
         # Queue evidence-backed engineering work automatically, outside capital authority.
@@ -427,6 +493,8 @@ class DarwinSupervisor:
             if not any(t.get("status") == "PREPARED" for t in pending):
                 self.prepare_engineer_task("Investigate research stagnation: compare fees, mutation coverage and next-window evidence. Propose isolated, tested code changes; never modify execution permissions.")
         self.persist_trades()
+        self._repair_diagnosis = {}
+        self._diagnosed_at = 0.0
         self.population.reset_epoch()
         self.baseline.reset_epoch()
         self.checkpoint()

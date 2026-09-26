@@ -1,5 +1,11 @@
+import { StrategyName, shortStrategy } from "./strategy-name";
+import { Help } from "./help";
+import {ResearchLabPanel} from "./research-lab";
+import {ResearchActivity} from "./research-activity";
+import {Autocorrection} from "./autocorrection";
 import React, { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Crown, FastForward, FlaskConical, Pause, Play, RotateCcw, Shield, Sparkles, Wrench, X } from "lucide-react";
+import {LineChart} from "./charts";
 import { API, wsUrl } from "./api";
 
 export type FactoryEvent = {
@@ -10,7 +16,7 @@ type Agent = { id:string; name:string; color:string; role:string; function:strin
 type FactoryState = {
   ts:number; symbol:string; mode:string; population:number; historical_population:number;
   market:{health:string; price?:number|null; regime:string; benchmark_return_bps:number};
-  champion?:{id:string; metrics:any}|null; agents:Agent[]; experiments:any[]; leaderboard:any[]; lessons:any[];
+  lab?:any; champion?:{id:string; metrics:any}|null; agents:Agent[]; experiments:any[]; leaderboard:any[]; lessons:any[];
   pnl?:any; pnl_history?:any[]; cycle?:any; status_counts:Record<string,number>; execution:any; research:any; evolution?:any; engineer?:any; brain_policy?:any; openbot?:any;
 };
 
@@ -56,15 +62,11 @@ const courierRoute=(type?:string)=>{
   return "core";
 };
 function EventCourier({event}:{event?:FactoryEvent}){if(!event)return null;return <div key={event.id} className={`event-courier route-${courierRoute(event.type)}`}><span>{eventToken[event.type]??"⚡"}</span><small>{event.type.replaceAll("_"," ")}</small></div>}
-function JudgeStamp({event}:{event?:FactoryEvent}){if(!event||event.type!=="judge_decision")return null;const d=String(event.payload?.decision??"WAIT").toUpperCase();return <div key={`judge-${event.id}`} className={`judge-stamp ${d.toLowerCase()}`}><b>{d}</b><small>{event.strategy_id??"strategy"}</small></div>}
+function JudgeStamp({event}:{event?:FactoryEvent}){if(!event||event.type!=="judge_decision")return null;const d=String(event.payload?.decision??"WAIT").toUpperCase();return <div key={`judge-${event.id}`} className={`judge-stamp ${d.toLowerCase()}`}><b>{d}</b><small>{<StrategyName id={event.strategy_id??"strategy"}/>}</small></div>}
 function CrownBurst({event}:{event?:FactoryEvent}){if(!event||event.type!=="champion_promoted")return null;return <div key={`crown-${event.id}`} className="crown-burst"><i>✨</i><i>👑</i><i>✨</i><i>★</i><i>✨</i></div>}
 
-function Sparkline({values,label}:{values:number[];label:string}){
-  const clean=values.filter(v=>Number.isFinite(v));
-  if(clean.length<2)return <div className="evo-spark empty"><small>{label}</small><span>Collecte des premières mesures…</span></div>;
-  const min=Math.min(...clean), max=Math.max(...clean), span=Math.max(1e-9,max-min);
-  const points=clean.map((v,i)=>`${(i/(clean.length-1))*100},${38-((v-min)/span)*34}`).join(" ");
-  return <div className="evo-spark"><small>{label}</small><svg viewBox="0 0 100 42" preserveAspectRatio="none"><polyline points={points}/></svg><b>{signed(clean.at(-1),1)}</b></div>;
+function Sparkline({values,label,times,epochs=false}:{values:(number|null)[];label:string;times?:number[];epochs?:boolean}){
+ return <LineChart values={values} times={times} label={label} epochs={epochs} zero/>;
 }
 function deltaClass(v:any, inverse=false){const n=Number(v);if(!Number.isFinite(n)||Math.abs(n)<1e-9)return "";const good=inverse?n<0:n>0;return good?"positive":"negative"}
 
@@ -105,7 +107,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const lastJudge=[...events].reverse().find(e=>e.type==="judge_decision");
   const selected=state?.agents.find(a=>a.id===selectedAgent)??null;
   const impactMetrics: Record<string,[string,string][]> = {
-    atlas:[["Champion",state?.champion?.id??"none"],["Population",String(state?.population??0)],["Experiments",String(state?.experiments.length??0)]],
+    atlas:[["Champion",state?.champion ? shortStrategy(state.champion.id) : "none"],["Population",String(state?.population??0)],["Experiments",String(state?.experiments.length??0)]],
     curie:[["Running experiments",String(state?.experiments.filter(x=>x.status==="RUNNING").length??0)],["Resolved",String(state?.experiments.filter(x=>x.status==="RESOLVED").length??0)],["Evidence ready",String(state?.research?.eligible??0)]],
     evolve:[["Challengers",String(state?.status_counts.CHALLENGER??0)],["Ever created",String(state?.historical_population??0)],["Mutation budget","controlled"]],
     forge:[["Paper accounts",String(state?.population??0)],["Market",state?.market.health??"WAITING"],["Regime",state?.market.regime??"WAITING"]],
@@ -128,18 +130,19 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
   const latestEvolution=evolution.latest??null;
   const evoDelta=evolution.deltas??{};
   const trend=String(evolution.trend??"WAITING");
+  const latestResearchRun=state.research?.agent_runs?.find((r:any)=>r.audit?.provider_status && r.audit.provider_status!=="deterministic");
   return <div className="factory-page">
     <header className="factory-hero">
-      <div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Recherche automatique</h2><p>Observer → sélectionner → muter → mesurer. Les cycles et les comparaisons montrent si les descendants progressent.</p></div>
+      <div className="darwin-identity"><img src="/darwin-owl.png" alt="Darwin — chouette terracotta" width="76" height="76"/><div><span className="factory-eyebrow">DARWIN FACTORY · PAPER · {mode==="simulation"?"SIMULATION":"LIVE DATA"}</span><h2>Recherche automatique <Help label="Recherche automatique" text="Les agents proposent des expériences à l’échéance du cycle. Le paper collecte entre les cycles ; les appels réels, caches, erreurs et changements sont visibles dans le journal de la boucle."/></h2><p>Observer → sélectionner → muter → mesurer. Les cycles et les comparaisons montrent si les descendants progressent.</p></div></div>
       <div className="factory-live"><span className="pulse-dot"/><b>{connected?state.market.health:"DISCONNECTED · RECONNECTING"}</b><small>{state.market.regime} · {state.symbol}</small></div>
     </header>
-    <p role="status">{state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Research provider configured · connection succeeds only after an actual run":"Recherche automatique déterministe · fournisseur IA indisponible"}</p>
+    <p role="status">{latestResearchRun?.audit?.provider_status==="quota"?"Dernier cycle : quota LLM atteint · propositions déterministes · voir le journal ci-dessous":state.agents.filter(a=>a.llm?.runtime!=="deterministic").some(a=>a.llm?.available)?"Fournisseur IA configuré · chaque tentative et son résultat sont détaillés ci-dessous":"Recherche automatique déterministe · fournisseur IA indisponible"}</p>
     <div className="factory-strip">
       <div><small>POPULATION</small><b>{state.population}</b><span>{state.status_counts.CHALLENGER??0} challengers</span></div>
-      <div><small>CHAMPION</small><b className="gold">{state.champion?.id??"No crown yet"}</b><span>{state.champion?.metrics?`${signed(state.champion.metrics.return_bps)} bp`:"collecting evidence"}</span></div>
+      <div><small>CHAMPION</small><b className="gold">{state.champion ? <StrategyName id={state.champion.id}/> : "No crown yet"}</b><span>{state.champion?.metrics?`${signed(state.champion.metrics.return_bps)} bp`:"collecting evidence"}</span></div>
       <div><small>MARKET</small><b>{signed(state.market.benchmark_return_bps)} bp</b><span>epoch benchmark</span></div>
 
-      <div><small>IA · COÛT ESTIMÉ 24H</small><b>${fmt(state.research?.llm_usage_24h?.estimated_cost_usd??0,4)}</b><span>{state.research?.llm_usage_24h?.calls??0} tentatives</span></div>
+      <div><small>IA · COÛT ESTIMÉ 24H</small><b>${fmt(state.research?.llm_usage_24h?.estimated_cost_usd??0,4)}</b><span>{state.research?.llm_usage_24h?.calls??0} résultats agents</span></div>
     </div>
 
     <section className="evolution-observatory pnl-panel" aria-label="Paper PnL">
@@ -151,23 +154,27 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         <div><small>TÉMOIN G0 · NET</small><b>{fmt(state.pnl?.fixed_g0?.mean_net_usd)} USD</b><span>{state.pnl?.fixed_g0?.count??0} stratégies conservées</span></div>
         <div><small>DESCENDANTS · NET</small><b>{fmt(state.pnl?.descendants?.mean_net_usd)} USD</b><span>{state.pnl?.descendants?.count??0} descendants</span></div>
       </div>
-      <div className="evo-sparks">{["active","fixed_g0","descendants"].map(group=><Sparkline key={group} label={`${group==="active"?"Stratégies actives":group==="fixed_g0"?"Témoin G0":"Descendants"} · net USD`} values={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start&&x[group]?.mean_net_usd!=null).map(x=>x[group].mean_net_usd)}/>)}</div>
+      <div className="evo-sparks">{["active","fixed_g0","descendants"].map(group=><Sparkline key={`${group}-${state.pnl?.window_start}`} label={`${group==="active"?"Stratégies actives":group==="fixed_g0"?"Témoin G0":"Descendants"} · net USD`} values={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start).map(x=>x[group]?.mean_net_usd??null)} times={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start).map(x=>x.recorded_at)} />)}</div>
       {!state.pnl?.control_window_matches && <p role="status">Comparaison en attente : G0 et descendants ont démarré sur des fenêtres différentes.</p>}
       <details className="pnl-method"><summary>Comprendre ces chiffres et les frais</summary><p>Chaque stratégie possède un compte paper indépendant : leur moyenne n’est pas un portefeuille. Historique par minute. Spread, profondeur visible et frais modélisés ; funding et impact réel non modélisés. Aucune aptitude au live démontrée.</p></details>
     </section>
     <section className="factory-strip" aria-label="Research cycle">
-      <div><small>CYCLE AUTOMATIQUE</small><b>{state.cycle?.status??"WAITING"}</b><span>{Math.ceil((state.cycle?.seconds_remaining??0)/60)} min avant la sélection automatique</span></div>
+      <div><small>{state.cycle?.trigger==="AUTO_REPAIR"?"CORRECTION AUTOMATIQUE":"CYCLE AUTOMATIQUE"}</small><b>{state.cycle?.status??"WAITING"}</b><span>{state.cycle?.status==="RESEARCH_RUNNING"?"Analyse LLM en cours · paper à plat entre deux fenêtres":`${Math.ceil((state.cycle?.seconds_remaining??0)/60)} min avant la sélection automatique`}</span></div>
       <div><small>EVIDENCE READY</small><b>{state.cycle?.eligible??0} / {state.cycle?.population??0}</b><span>Requires {state.cycle?.min_sample_seconds??"—"} seconds and {state.cycle?.min_closed_trades??"—"} closed trades per strategy</span></div>
       <div><small>RECURSIVE LOOP</small><b>G0 → G{state.cycle?.max_generation??0}</b><span>Measure → select → mutate one gene → test next window → repeat</span></div>
       <div><small>DERNIER CYCLE TERMINÉ</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
     </section>
+    {state.cycle?.diagnosis?.actionable && <div className="darwin-message"><b>Problème détecté : {state.cycle.diagnosis.code==="FEE_DRAG"?"poids excessif des frais":"pertes généralisées"}</b><p>{state.cycle.diagnosis.fee_affected} stratégies affectées par les frais sur {state.cycle.diagnosis.eligible} évaluables. Un cycle anticipé sollicitera les agents, puis testera de nouveaux descendants. Une hypothèse n’est pas une correction validée.</p></div>}
+    <ResearchLabPanel lab={state.lab}/>
+    <ResearchActivity key={`${symbol}-${mode}`} runs={state.research?.agent_runs??[]} experiments={state.experiments} cycle={state.cycle} symbol={symbol} mode={mode} events={events}/>
+    <Autocorrection/>
     <section className="factory-shell">
       <aside className="factory-side left">
         <div className="factory-panel-title"><BrainCircuit size={16}/> Factory pulse</div>
         <div className="pulse-card"><span>⚙️</span><div><b>{state.population} paper accounts</b><small>FORGE measures fills, fees & PnL</small></div></div>
         <div className="pulse-card"><span>🧪</span><div><b>{state.experiments.filter(x=>x.status==="RUNNING").length} experiments</b><small>controlled hypotheses alive</small></div></div>
         <div className="pulse-card"><span>🛡️</span><div><b>{state.execution.ready?"Execution armed":"Capital locked"}</b><small>{state.execution.network??"testnet"} · paper remains primary</small></div></div>
-        <div className="pulse-card"><span>🧠</span><div><b>OpenAI research brain</b><small>Sol → Sol → Terra · Judge critic · Luna memory</small></div></div>
+        <div className="pulse-card"><span>🧠</span><div><b>Fournisseurs de recherche</b><small>{Array.from(new Set(state.agents.filter(a=>["atlas","curie","evolve","mnemosyne"].includes(a.id)).map(a=>a.llm?.provider??"déterministe"))).join(" · ")} · disponibilité dans le panneau Autocorrection</small></div></div>
         <div className="pulse-card"><span>🧬</span><div><b>Genome V{state.research?.genome?.version??2}</b><small>{geneCatalog.length} bounded genes · one variable per experiment</small></div></div>
         <div className="pulse-card"><span>🤖</span><div><b>OpenBot {state.openbot?.enabled?"ONLINE":"OPTIONAL"}</b><small>{state.openbot?.enabled?"4 local AG-UI coworkers available":"not connected · optional extras + token required"}</small></div></div>
         <details className="advanced-panel"><summary>Catalogue des mutations</summary><div className="genome-lab"><h4>Genome V2 genes</h4><div>{geneCatalog.map((g:any)=><span key={g.name} title={g.description}>{g.label??g.name}</span>)}</div></div></details>
@@ -176,7 +183,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <main className="factory-floor">
         <div className="factory-smoke smoke-a"/><div className="factory-smoke smoke-b"/>
         <EventCourier event={liveEvent}/><JudgeStamp event={liveEvent}/><CrownBurst event={liveEvent}/>
-        <div className="engineer-loft"><div className="engineer-avatar">🦝<span>🧑‍💻</span></div><div><small>ABOVE THE FACTORY · CODE ONLY</small><b>CODEX ENGINEER</b><p>{"Les tâches sont préparées automatiquement en cas de stagnation. Leur exécution et l’adoption du code ne sont pas encore connectées."}</p></div><div className="engineer-meta"><span>{state.engineer?.engineer?.model??"gpt-6-astra"}</span><span>{"EXÉCUTION NON CONNECTÉE"}</span><button onClick={()=>void prepareEngineerTask()} disabled={engineerBusy}><Wrench size={13}/>{engineerBusy?"Préparation…":"Ajouter une tâche (facultatif)"}</button></div></div>
+        <div className="engineer-loft"><div className="engineer-avatar">🦝<span>🧑‍💻</span></div><div><small>ABOVE THE FACTORY · CODE ONLY</small><b>CODEX ENGINEER</b><p>{"Les incidents persistants déclenchent des propositions de code isolées, testées et comparées aux observations. Chaque patch reste soumis à revue."}</p></div><div className="engineer-meta"><span>{state.engineer?.engineer?.model??"gpt-6-astra"}</span><span>{"INTÉGRATION SOUMISE À REVUE"}</span><button onClick={()=>void prepareEngineerTask()} disabled={engineerBusy}><Wrench size={13}/>{engineerBusy?"Préparation…":"Ajouter une tâche (facultatif)"}</button></div></div>
         <div className="factory-row top">
           <Character agent={A("atlas")} selected={selectedAgent==="atlas"} active={activeAgent==="atlas"} dimmed={isDim("atlas")} onClick={()=>setSelectedAgent(selectedAgent==="atlas"?null:"atlas")}/>
           <Conveyor label="attention / budget" hot={activeAgent==="atlas"||activeAgent==="curie"}/>
@@ -195,7 +202,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         </div>
         <div className="capital-boundary"><span>CAPITAL BOUNDARY</span><i/></div>
         <div className="factory-row bottom">
-          <div className="champion-pedestal"><Crown size={22}/><small>CHAMPION</small><b>{state.champion?.id??"empty"}</b></div>
+          <div className="champion-pedestal"><Crown size={22}/><small>CHAMPION</small><b>{state.champion ? <StrategyName id={state.champion.id}/> : "empty"}</b></div>
           <Conveyor label="validated intent" hot={activeAgent==="cerberus"}/>
           <Character agent={A("cerberus")} selected={selectedAgent==="cerberus"} active={activeAgent==="cerberus"} dimmed={isDim("cerberus")} onClick={()=>setSelectedAgent(selectedAgent==="cerberus"?null:"cerberus")}/>
           <Conveyor label={state.execution.ready?"ALLOW / BLOCK":"LOCKED"} hot={activeAgent==="hermes"}/>
@@ -207,7 +214,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <aside className="factory-side right">
         <div className="factory-panel-title"><Sparkles size={16}/> Impact inspector</div>
         {selected?<div className="impact-card" style={{"--agent":selected.color} as React.CSSProperties}><button onClick={()=>setSelectedAgent(null)}><X size={14}/></button><span className="impact-emoji">{persona[selected.id]?.emoji}<i>{persona[selected.id]?.badge}</i></span><h3>{selected.name}</h3><small>{persona[selected.id]?.title} · {selected.role}</small><p>{selected.function}</p><dl><dt>State</dt><dd>{selected.status}</dd><dt>Brain</dt><dd>{selected.llm?.runtime??selected.brain_status} · {selected.llm?.model??"code"}</dd><dt>Class</dt><dd>{selected.brain_class??"—"}</dd><dt>Capital</dt><dd>{selected.capital_permission}</dd></dl><div className="impact-metrics">{(impactMetrics[selected.id]??[]).map(([k,v])=><span key={k}><small>{k}</small><b>{v}</b></span>)}</div><h4>Inputs</h4><p>{selected.inputs.join(" · ")}</p><h4>Outputs</h4><p>{selected.outputs.join(" · ")}</p></div>:<div className="impact-empty"><span>👆</span><b>Click a character</b><p>Its dependencies, decisions and impact paths will light up.</p></div>}
-        {selectedStrategy&&<div className="strategy-pop"><button onClick={()=>setSelectedStrategy(null)}><X size={13}/></button><small>GENOME V{selectedStrategy.strategy.genome_version??2} INSPECTOR</small><b>{selectedStrategy.strategy.id}</b><p>{[...selectedStrategy.lineage].reverse().map((x:any)=><button key={x.id} onClick={()=>void inspect(x.id)}>{x.id} → </button>)}</p><div>Children: {(selectedStrategy.children??[]).map((id:string)=><button key={id} onClick={()=>void inspect(id)}>{id}</button>)}</div><span>{selectedStrategy.strategy.family} · {selectedStrategy.strategy.horizon}s · gen {selectedStrategy.strategy.generation}</span><div className="gene-grid">{geneCatalog.map((g:any)=><span key={g.name}><small>{g.label??g.name}</small><b>{fmt(selectedStrategy.strategy[g.name],g.kind==="int"?0:2)}{g.unit?` ${g.unit}`:""}</b></span>)}</div>{selectedStrategy.strategy.mutation?.parameter&&<div className="mutation-note"><small>LAST MUTATION</small><b>{selectedStrategy.strategy.mutation.parameter}</b><p>{String(selectedStrategy.strategy.mutation.from??"?")} → {String(selectedStrategy.strategy.mutation.to??"?")} · ×{fmt(selectedStrategy.strategy.mutation.factor,2)}</p></div>}</div>}
+        {selectedStrategy&&<div className="strategy-pop"><button onClick={()=>setSelectedStrategy(null)}><X size={13}/></button><small>GENOME V{selectedStrategy.strategy.genome_version??2} INSPECTOR</small><b>{<StrategyName id={selectedStrategy.strategy.id}/>}</b><p>{[...selectedStrategy.lineage].reverse().map((x:any)=><button key={x.id} onClick={()=>void inspect(x.id)}><StrategyName id={x.id}/> → </button>)}</p><div>Children: {(selectedStrategy.children??[]).map((id:string)=><button key={id} onClick={()=>void inspect(id)}><StrategyName id={id}/></button>)}</div><span>{selectedStrategy.strategy.family} · {selectedStrategy.strategy.horizon}s · gen {selectedStrategy.strategy.generation}</span><div className="gene-grid">{geneCatalog.map((g:any)=><span key={g.name}><small>{g.label??g.name}</small><b>{fmt(selectedStrategy.strategy[g.name],g.kind==="int"?0:2)}{g.unit?` ${g.unit}`:""}</b></span>)}</div>{selectedStrategy.strategy.mutation?.parameter&&<div className="mutation-note"><small>LAST MUTATION</small><b>{selectedStrategy.strategy.mutation.parameter}</b><p>{String(selectedStrategy.strategy.mutation.from??"?")} → {String(selectedStrategy.strategy.mutation.to??"?")} · ×{fmt(selectedStrategy.strategy.mutation.factor,2)}</p></div>}</div>}
       </aside>
     </section>
 
@@ -225,7 +232,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         <div><small>GENERATION</small><b>G{evolution.lineage?.max_generation??0}</b><span>{evolution.historical_population??state.historical_population} genomes seen</span></div>
       </div>
       <div className="evolution-grid">
-        <div className="evolution-chart-card"><div className="evo-card-head"><b>Progress through epochs</b><small>rolling history stored in SQLite</small></div><div className="evo-sparks"><Sparkline label="Quality index" values={evoHistory.map((x:any)=>Number(x.research_quality_index))}/><Sparkline label="Champion alpha bp" values={evoHistory.map((x:any)=>Number(x.champion_alpha_bps))}/><Sparkline label="Fee stress bp" values={evoHistory.map((x:any)=>Number(x.champion_fee_stress_bps))}/></div><div className="epoch-ribbon">{evoHistory.slice(-16).map((x:any)=><span key={x.epoch_id} className={x.champion_id===state.champion?.id?"current":""} title={`Epoch ${x.epoch_id} · ${x.champion_id} · Q ${fmt(x.research_quality_index,1)}`}><i style={{height:`${Math.max(8,Math.min(100,Number(x.research_quality_index)||0))}%`}}/><small>E{x.epoch_id}</small></span>)}</div></div>
+        <div className="evolution-chart-card"><div className="evo-card-head"><b>Progress through epochs</b><small>rolling history stored in SQLite</small></div><div className="evo-sparks"><Sparkline label="Quality index" values={evoHistory.map((x:any)=>x.research_quality_index==null?null:Number(x.research_quality_index))} times={evoHistory.map((x:any)=>x.epoch_id)} epochs/><Sparkline label="Champion alpha bp" values={evoHistory.map((x:any)=>x.champion_alpha_bps==null?null:Number(x.champion_alpha_bps))} times={evoHistory.map((x:any)=>x.epoch_id)} epochs/><Sparkline label="Fee stress bp" values={evoHistory.map((x:any)=>x.champion_fee_stress_bps==null?null:Number(x.champion_fee_stress_bps))} times={evoHistory.map((x:any)=>x.epoch_id)} epochs/></div><div className="epoch-ribbon">{evoHistory.slice(-16).map((x:any)=><span key={x.epoch_id} className={x.champion_id===state.champion?.id?"current":""} title={`Epoch ${x.epoch_id} · ${x.champion_id} · Q ${fmt(x.research_quality_index,1)}`}><i style={{height:`${Math.max(8,Math.min(100,Number(x.research_quality_index)||0))}%`}}/><small>E{x.epoch_id}</small></span>)}</div></div>
         <div className="evolution-chart-card"><div className="evo-card-head"><b>Lineage ladder</b><small>descendants that survived selection</small></div><div className="generation-ladder">{(evolution.lineage?.generation_counts??[]).map((g:any)=><div key={g.generation}><span>G{g.generation}</span><div><i style={{width:`${Math.max(2,(g.active/Math.max(1,g.total))*100)}%`}}/></div><b>{g.active}/{g.total}</b></div>)}</div><div className="family-wins"><small>CHAMPION EPOCHS BY FAMILY</small>{(evolution.lineage?.family_champion_epochs??[]).slice(0,5).map((f:any)=><span key={f.family}><b>{f.family}</b><i style={{width:`${Math.min(100,(f.epochs/Math.max(1,evolution.epochs_observed))*100)}%`}}/><em>{f.epochs}</em></span>)}</div></div>
         <div className="evolution-chart-card gene-evolution"><div className="evo-card-head"><b>What Darwin is changing</b><small>mutation pressure by gene</small></div>{(evolution.gene_evolution??[]).map((g:any)=><div className="gene-evo-row" key={g.name}><span><b>{g.label}</b><small>median {g.active_median==null?"—":fmt(g.active_median,g.name==="confirmation_ticks"?0:2)} {g.unit??""}</small></span><div><i style={{width:`${Math.min(100,(g.mutations/Math.max(1,...(evolution.gene_evolution??[]).map((x:any)=>x.mutations)))*100)}%`}}/></div><em>{g.mutations}×</em></div>)}</div>
       </div>

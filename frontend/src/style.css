@@ -2122,3 +2122,103 @@ footer i {
 
 /* Progressive disclosure keeps operational views focused. */
 .advanced-panel{border:1px solid var(--border,#263440);border-radius:12px;padding:12px 16px;margin:12px 0;color:#9aafbf}.advanced-panel>summary,.nav-advanced>summary{cursor:pointer;font-size:13px;line-height:1.6}.advanced-panel[open]>summary{margin-bottom:16px}.nav-advanced{margin-top:18px;color:#8ca2b5}.nav-advanced>summary{padding:10px 14px}.nav-advanced a{font-size:12px}.factory-strip b{overflow-wrap:anywhere}.factory-page>.factory-strip:first-of-type{grid-template-columns:repeat(4,minmax(0,1fr))}
+
+.autocorrection-panel{margin:24px 0;padding:24px;border:1px solid #36505a;border-radius:18px;background:linear-gradient(120deg,#101c25,#141823);color:#dce7ee}.autocorrection-panel header{display:flex;justify-content:space-between;gap:20px}.autocorrection-panel h3{font-size:23px;margin:8px 0}.autocorrection-panel p{font-size:13px;color:#9fb4c6;line-height:1.6}.autocorrection-panel small{font-size:10px;color:#819aa9}.autocorrection-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:18px 0}.autocorrection-panel button,.autocorrection-panel select{background:#1d3940;border:1px solid #426a72;border-radius:8px;padding:10px;color:#d7f9ee;cursor:pointer}.autocorrection-panel button:disabled{opacity:.45;cursor:not-allowed}.autocorrection-panel details{margin:12px 0}.autocorrection-panel summary{cursor:pointer;font-size:13px}.autocorrection-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0a1119;padding:15px;font-size:12px;max-height:300px;overflow:auto}.autocorrection-panel code{overflow-wrap:anywhere}.autocorrection-status{display:flex;gap:16px;flex-wrap:wrap;margin-top:20px}.autocorrection-status b{color:#75e2c5}.autocorrection-status span{font-size:12px}.autocorrection-history{display:flex;list-style:none;gap:12px;flex-wrap:wrap;padding:0}.autocorrection-history li{padding:9px;background:#172832;border-radius:8px;font-size:11px}.autocorrection-history small{display:block}.autocorrection-panel table{width:100%;font-size:12px;text-align:left}.autocorrection-panel a{color:#72d9c9}@media(max-width:700px){.autocorrection-panel{padding:16px}.autocorrection-panel header{display:block}}
+
+/* Shared brand assets: preserve the complete mark at every sidebar width. */
+.brand-icon img { width: 100%; height: 100%; max-width: 100%; object-fit: contain; }
+
+/* Warm origami identity; financial positive/negative colors remain semantic. */
+.sidebar { background: #211914; border-right-color: #4b3528; }
+.brand { color: #fff0da; }
+.brand .byline, .nav-label { color: #cda98a; }
+.factory-hero { background: linear-gradient(120deg, #332218, #201914); border: 1px solid #64432d; border-radius: 18px; padding: 24px; }
+.darwin-identity { display: flex; align-items: center; gap: 18px; min-width: 0; }
+.darwin-identity > img { flex: 0 0 76px; object-fit: contain; border-radius: 18px; }
+.darwin-identity .factory-eyebrow { color: #f0b47c; }
+.darwin-identity h2 { color: #fff1df; }
+@media (max-width: 600px) {
+  .darwin-identity { flex-direction: column; align-items: flex-start; }
+  .factory-hero { padding: 18px; }
+}
+
+.wallet-setup { max-width: 900px; margin: 20px auto; padding: 28px; background: var(--panel); border: 1px solid #64432d; border-radius: 18px; line-height: 1.6; }
+.wallet-setup header, .wallet-setup form, .wallet-setup section { display: grid; gap: 14px; margin-bottom: 24px; }
+.wallet-setup label { display: grid; gap: 6px; }
+.wallet-setup input { width: 100%; min-width: 0; color: #fff1df; background: #211914; border: 1px solid #78553c; border-radius: 8px; padding: 12px; }
+.wallet-setup button { padding: 10px 16px; border: 1px solid #ba8057; border-radius: 8px; background: #70462d; color: #fff5e9; }
+.wallet-setup select { width: 100%; white-space: normal; }
+.wallet-status { display: grid; gap: 4px; padding: 12px; margin: 18px 0; border-left: 3px solid #e5a66d; background: #302219; }
+.wallet-address { overflow-wrap: anywhere; }
+.wallet-setup a { text-decoration: underline; color: #f0b47c; }
+.wallet-setup [role="alert"] { color: #ffbdab; margin: 16px 0; }
+@media(max-width:600px){ .wallet-setup { padding: 16px; } }
+
+.strategy-alias { display: inline-block; max-width: 100%; overflow-wrap: anywhere; font-size: .9em; }
+.research-activity { margin: 22px 0; padding: 22px; border: 1px solid #825337; border-radius: 18px; background: linear-gradient(125deg,#2d211a,#101923); }
+.research-activity header { display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between; margin-bottom:12px; }
+.research-activity header strong { color:#f2bc8f; }
+.research-activity h4 { margin:18px 0 10px; }
+.research-activity p { margin:12px 0; line-height:1.6; }
+.activity-filters { display:flex;gap:8px;margin:14px 0;flex-wrap:wrap; }
+.activity-filters button,.research-activity>button { background:#34271f; border:1px solid #8f6344; border-radius:8px;padding:8px 14px; }
+.activity-filters button[aria-pressed=true] { background:#925d38;color:#fff5e9; }
+.research-runs { max-height:520px;overflow:auto; }
+.research-runs>details,.mutation-ledger>details { padding:12px;border-bottom:1px solid #4b3a2e; }
+.research-runs summary { display:flex;gap:12px;flex-wrap:wrap;cursor:pointer; }
+.research-runs time { color:#c1b49f; }
+.run-kind { color:#f1bd8a; }
+.research-activity pre,.trade-journal pre { white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:12px;padding:12px;background:#10151c; }
+.wallet-steps { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0; }
+.wallet-steps span { padding:14px;border:1px solid #67472f;border-radius:10px;display:grid;gap:8px; }
+@media(max-width:650px){.wallet-steps{grid-template-columns:1fr}.research-activity{padding:14px}.sidebar nav a {min-width:0;width:100%;}.sidebar .nav-advanced{display:none}.sidebar nav a>span:not(.nav-indicator){display:none}.sidebar nav a{font-size:0;}.sidebar nav a svg{min-width:20px}.factory-live{max-width:100%}}
+.testnet-validation{margin-top:2rem;padding:1.5rem;border:1px solid #594638;border-radius:18px;background:linear-gradient(140deg,#201b19,#101923);overflow-wrap:anywhere}
+.testnet-validation header p,.testnet-validation>p{line-height:1.55;color:#c9c1b9}
+.testnet-validation .wallet-steps{margin:1rem 0;flex-wrap:wrap;gap:1rem}
+.validation-checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.6rem;list-style:none;padding:0}
+.validation-checks span{color:#e6ae78}
+.testnet-validation article{border-top:1px solid #594638;padding:1rem 0}
+.testnet-validation input[type=checkbox]{width:auto;margin-right:.5rem}
+.interactive-chart{padding:12px 14px;color:#ded6cb;min-width:0;overflow:hidden}
+.interactive-chart h4{margin:2px 0 12px;font-size:14px;color:#eee4d6}
+.plot-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:9px;font-size:11px}
+.plot-toolbar label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#c7baaa}
+.plot-toolbar select,.plot-toolbar button{font:inherit;color:#e7ded1;background:#20272d;border:1px solid #4c4944;border-radius:7px;min-height:30px;padding:5px 8px;max-width:100%}
+.plot-toolbar button[aria-pressed=true]{border-color:#d6a677;background:#413126}
+.plot-toolbar button:disabled{opacity:.4;cursor:default}
+.plot-toolbar input[type=range]{width:90px;accent-color:#d6a677}
+.plot-toolbar :focus-visible{outline:2px solid #e1b98c;outline-offset:2px}
+.plot-readout{font:11px/1.6 ui-monospace,monospace;color:#d6c9b9;min-height:36px;padding:5px 0;font-variant-numeric:tabular-nums}
+.controlled-plot{display:block;width:100%;height:auto;background:#111820;border-radius:8px;touch-action:pan-y;user-select:none}
+.controlled-plot text{font:11px ui-monospace,monospace;fill:#b7b3aa}
+.controlled-plot line,.controlled-plot path,.controlled-plot polyline{vector-effect:non-scaling-stroke}
+.plot-grid{stroke:#33404a;stroke-dasharray:3 5;stroke-width:1}
+.plot-note{font-size:11px;line-height:1.6;color:#a99e91;margin:10px 0 2px}
+.controlled-heatmap{width:100%;height:240px;margin:0;background:#111820;border-radius:8px}
+.evo-sparks{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px}
+.evo-sparks .line-chart{border:1px solid #45413c;border-radius:12px;background:#121a21}
+.trigger-bars{max-height:340px;overflow:auto;padding:8px 0;display:grid;gap:6px}
+.trigger-bars>div{display:grid;grid-template-columns:86px 1fr 48px;gap:8px;align-items:center;font:11px ui-monospace,monospace;min-height:17px}
+.trigger-bars>div>div{background:#242e36;border-radius:3px;overflow:hidden}
+.trigger-bars i{height:7px;display:block;border-radius:3px}
+.trigger-bars b{text-align:right;font-weight:500}
+.chart-sub{flex-wrap:wrap;gap:8px}
+.main-column,.right-column,.bottom-grid>*,.lab-grid>*{min-width:0}
+@media(max-width:700px){.interactive-chart{padding:10px 8px}.plot-toolbar{gap:5px}.plot-toolbar select,.plot-toolbar button{min-height:36px}.bottom-grid{grid-template-columns:1fr}.chart-sub .gold{margin-left:0}}
+.mini-history{font-size:11px;line-height:1.5;margin-top:6px;color:#bcb1a3}
+.mini-history summary,.axis-options summary{cursor:pointer;font-size:11px;padding:6px 0;color:#d6ba98}
+.metric:has(.mini-history[open]){grid-column:1/-1;height:auto;min-height:200px}
+.mini-history[open] .interactive-chart{max-width:900px}
+.axis-options{margin:4px 0}
+.surface-toolbar{padding:10px 15px 0}
+.surface-content{overflow-x:auto}
+.surface-grid .surface-cell,.surface-grid .surface-axis{font-size:inherit}
+.metric > .spark{position:static;width:100%;height:32px;opacity:.8;margin-top:10px}
+.autocorrection-panel > label{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.autocorrection-panel > label select{min-width:0;max-width:100%}
+
+/* Wallet stays below the research navigation, including the compact sidebar. */
+.wallet-access{display:flex;align-items:center;gap:10px;margin-top:auto;padding:12px 10px;border-radius:8px;color:var(--muted);font-size:12px;border:1px solid var(--border)}
+.wallet-access:hover,.wallet-access.active{color:#edb18b;background:#241e1b;border-color:#674638}
+.wallet-access+.engine-status{margin-top:0}
+@media(max-width:900px){.wallet-access{justify-content:center;padding:12px 4px}.wallet-access span{display:none}.wallet-access svg{flex-shrink:0}}

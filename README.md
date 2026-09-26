@@ -1,3 +1,7 @@
+# Lancement courant : Hyperliquid paper
+
+Double-cliquer **Darwin - Hyperliquid Paper** sur le bureau, ou `Demarrer-Darwin-Paper.cmd`. Données actuelles Hyperliquid, ordres simulés localement, aucun wallet requis. Voir [HYPERLIQUID_PAPER.md](HYPERLIQUID_PAPER.md) pour la boucle, les limites et le futur réel.
+
 > Local V1 hardening: see [V1_VALIDATION.md](V1_VALIDATION.md) for Windows launch, executed checks, provider status and remaining work. Current target branch: `darwin-v0.11-factory-evolution`; do not merge PR #1.
 
 # Swarm Trade by Mister Gésier — V0.11 Evolution Observatory + Factory Crew
@@ -28,7 +32,7 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 Restart Darwin after changing environment settings. Existing process environment variables take precedence over `.env`.
 
-- `DARWIN_AUTOSTART_MODE=simulation`: offline synthetic data. `live` means public market data, not permission to execute orders.
+- `DARWIN_AUTOSTART_MODE=live`: current public Hyperliquid market data with paper execution. Synthetic sessions are not exposed by the application.
 - `DARWIN_AUTO_EPOCH_ENABLED=true`, `DARWIN_EPOCH_SECONDS=86400`: automatic daily selection, subject to evidence gates; the initial schedule survives restart.
 - `DARWIN_PAPER_FEE_BPS=3.5`: modeled fee per fill, not a verified Hyperliquid account tier. Changing accounting settings with an existing checkpoint is rejected; keep original settings or use a separate data directory.
 - `DARWIN_LLM_ENABLED=true`: allows configured research providers; without a key the deterministic fallback remains usable. Set `false` to disable provider calls explicitly.
@@ -70,7 +74,7 @@ Binance depth initialization opens and buffers the stream before the REST snapsh
 
 The public adapter follows Binance's [Spot WebSocket streams documentation](https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams). Exchange connectivity depends on network and regional access.
 
-Raw snapshot, depth, trade, quote, and engine-clock events are recorded under `data/<mode>-<symbol>-<session>/` as Zstandard-compressed Parquet parts. Each part stores receive time and the original event payload. Recording happens for simulation as well as live data. Buffered events flush at batch thresholds, export, and graceful shutdown; abrupt process termination can lose the current unflushed batch. Raw recording is configurable with `DARWIN_RECORD_RAW`; each session keeps at most `DARWIN_RECORD_MAX_PARTS` part files (240 by default) to prevent unbounded disk growth. Set the cap to `0` only if you intentionally want unlimited parts.
+Raw snapshot, depth, trade, quote, and engine-clock events are recorded under `data/<mode>-<symbol>-<session>/` as Zstandard-compressed Parquet parts. Each part stores receive time and the original event payload. The application records current Hyperliquid data; synthetic generators remain only in offline tests. Buffered events flush at batch thresholds, export, and graceful shutdown; abrupt process termination can lose the current unflushed batch. Raw recording is configurable with `DARWIN_RECORD_RAW`; each session keeps at most `DARWIN_RECORD_MAX_PARTS` part files (240 by default) to prevent unbounded disk growth. Set the cap to `0` only if you intentionally want unlimited parts.
 
 Replay a persisted recording:
 
@@ -254,7 +258,7 @@ A separate **CODEX ENGINEER** sits above the Troll Factory. It can prepare an au
 
 Useful V0.9 endpoints:
 
-- `GET /api/brains/state?symbol=BTCUSDT&mode=simulation` — brain policy, runtime/model status, usage/cost and engineer state.
+- `GET /api/brains/state?symbol=BTCUSDT&mode=live` — brain policy, runtime/model status, usage/cost and engineer state.
 - `GET /api/engineer/state` — CODEX ENGINEER boundary and recent prepared tasks.
 - `POST /api/engineer/task` — freeze a code-only task pack from current research evidence.
 - `GET /api/factory/state` — Troll Factory state including brain classes and Codex Engineer.
@@ -303,3 +307,87 @@ Trois vues principales : **Marché** pour les données et signaux, **Recherche e
 Le journal conserve les 10 000 dernières clôtures paper par base symbole/mode, y compris entre les cycles et redémarrages ; l’écran affiche les 50 dernières. Chaque ligne expose le résultat net, les frais connus et la raison de sortie. Les prix affichés sont les milieux de carnet de référence, pas les prix exécutés. Les trades antérieurs à cette fonctionnalité ne sont pas reconstruits ; les frais d’une position déjà ouverte avant la mise à jour peuvent être inconnus. La sauvegarde suit les checkpoints (une interruption brutale peut perdre les dernières secondes).
 
 JUDGE et les mutations fonctionnent automatiquement lorsque les conditions du cycle sont remplies. La commande manuelle est facultative. Les tâches d’ingénierie sont préparées automatiquement en cas de stagnation ; l’exécution et l’adoption de code autonome restent à implémenter.
+
+
+### Réaction autonome aux problèmes de recherche
+
+`DARWIN_AUTO_REPAIR_ENABLED=true` active un diagnostic chaque minute à partir des comptes mesurés. Après au moins 1 800 secondes observées et 20 clôtures par stratégie, des frais dominants chez au moins 25 % des stratégies évaluables, ou une perte supérieure à 100 bp chez au moins 50 %, avancent le prochain cycle à `DARWIN_REPAIR_INTERVAL_SECONDS` depuis le dernier cycle (3 600 s par défaut, minimum 1 800 s). Les contrôles de sélection, frais et limites de population restent inchangés. Le minuteur est reconstruit depuis le dernier cycle sauvegardé et les symptômes depuis les checkpoints.
+
+ATLAS et CURIE reçoivent le symptôme chiffré. Les parents affectés peuvent produire de nouveaux challengers sans réactiver un compte retiré. FORGE observe ces descendants sur les données suivantes ; JUDGE les réévalue au cycle suivant, et les résultats alimentent la mémoire. Factory indique le problème et le déclenchement anticipé. Cela automatise la recherche de mutations bornées ; cela ne réécrit pas encore librement le code et ne prouve pas qu’une mutation a causé une amélioration.
+
+Les agents nécessitent un fournisseur LLM configuré. `enabled=true` signifie autorisé, `available=true` signifie configuration présente ; seul un appel réussi vérifie la connexion. Sans clé, le repli déterministe demeure explicite. Le connecteur OpenBot optionnel utilise également un fournisseur de modèles ; son installation seule ne donne pas accès à OpenAI.
+
+
+### Démonstration locale de correction de code V3
+
+Voir [DARWIN_DEMO_V3.md](DARWIN_DEMO_V3.md). `Demarrer-Darwin-Demo.cmd` lance la Factory et son worker séparé. La démo produit un vrai diff via Codex CLI (ou un mock explicitement étiqueté), exécute des tests indépendants et laisse la proposition en attente de revue. `Verifier-Darwin-Demo.cmd` expose l’état local. OpenRouter gratuit est préparé avec quota partagé ; aucune intégration de code ou activation du trading réel n’est automatique.
+
+
+### Fusion contrôlée de la PR V3
+
+`Fusionner-Darwin-PR2.cmd` vérifie la PR #2, ses validations et son commit exact, puis demande de saisir `FUSIONNER <SHA>` avant la demande de fusion. `Fusionner-Darwin-PR2.ps1 -VerifierSeulement` effectue les contrôles sans fusion. Le script utilise GitHub CLI et le helper installé du plugin PR Completion 0.3.0 ; il s’arrête si une dépendance ou une validation manque.
+
+Destination de cette fusion : `darwin-v0.11-factory-evolution`, pas `main`. La PR #1 vers `main` reste une étape distincte avec ses propres validations. Aucun code généré par une expérience isolée n’est intégré par ce script ; aucun déploiement ni trading réel n’est activé.
+
+
+### Wallet Hyperliquid
+
+Ouvrir **Wallet Hyperliquid** ou `http://127.0.0.1:8000/hyperliquid` : connexion du wallet navigateur ou consultation d’une adresse publique, mainnet/testnet, positions perps principales, balances spot et ordres ouverts. Lecture seule sans signature, sans stockage de clé et sans activation du réel. Voir [HYPERLIQUID_WALLET.md](HYPERLIQUID_WALLET.md).
+
+
+### Journal de recherche et connexion MetaMask
+
+Factory affiche désormais les questions et aperçus de contexte conservés à chaque appel d’agent, ses réponses, son statut (appel réseau réel, cache, repli ou historique non instrumenté), ainsi que les hypothèses et décisions des expériences. Les questions CURIE portent explicitement sur les frais, la durée des positions, les sorties et la contribution non démontrée des indicateurs. Les lots incluent des métriques compactes des parents et les comparaisons d’indicateurs terminées, sans prétendre constituer une preuve causale. Les anciennes questions ne sont pas reconstruites.
+
+Les nouveaux trades enregistrent le régime et les indicateurs d’entrée, le brut avant frais et les excursions MAE/MFE sur les ticks observés au milieu du carnet. Les anciennes données restent inconnues. Ces attributs sont de la télémétrie : ils n’ajoutent pas de nouveaux gènes ni de preuve de rentabilité. Les noms courts sont des alias d’affichage ; les identifiants et la filiation sont inchangés.
+
+La connexion MetaMask utilise l’extension détectée ou le QR officiel pour mobile. Elle partage uniquement l’adresse permettant de consulter Hyperliquid ; le live reste désactivé. Voir [le parcours wallet](HYPERLIQUID_WALLET.md). Les propositions de code restent soumises à revue dans Autocorrection.
+
+
+### Recherche regroupée et corrections sur incident
+
+Le laboratoire regroupe les questions dans un seul appel CURIE (au plus 3 plans), uniquement après une évolution quantifiée des observations et au plus une fois toutes les deux heures par marché. La sélection des parents et la mémoire des résultats restent déterministes. La critique LLM de JUDGE est réservée aux descendants prometteurs, au plus une fois par 24 heures. Aucun de ces avis ne remplace les décisions numériques.
+
+Le budget gratuit local est configurable jusqu’à 50 tentatives sur 24 heures glissantes (40 par défaut), dont 4 réservées aux incidents. Les demandes ordinaires sont espacées de 30 minutes et les incidents de 5 minutes, tous marchés/processus confondus. Les échecs comptent ; les succès identiques peuvent être servis du cache. Factory affiche séparément le quota OpenRouter observé, mis en cache une heure, qui utilise le jour UTC et peut être indisponible. Les modèles restent exclusivement gratuits. Le statut d’un lot refusé n’est jamais présenté comme une réponse réelle.
+
+Des comptes shadow gelés avant observation comparent quatre interventions pendant une heure : neutraliser imbalance (Book pressure), flux (Breakout), microprice (Microprice), ou filtrer le spread au-delà de 2 bp (Momentum). Mêmes carnets et frais, aucune promotion automatique. Une comparaison avec trop peu de trades reste insuffisante, y compris une ablation qui supprime toutes les entrées. Un redémarrage recommence une fenêtre commune sans effacer les bilans terminés.
+
+`DARWIN_AUTO_CODE_RESEARCH=true` autorise le worker local à préparer au plus un candidat par jour lorsqu’un incident se répète sur deux cycles et que des observations Hyperliquid ont été enregistrées. Codex propose uniquement une fonction pure de filtrage du signal dans `research_policy.py`, isolée de l’exécution et inactive dans le moteur. Aucun défaut n’est injecté. La validation utilise le dernier segment des observations enregistrées, non transmis au modèle, ainsi que des contrats indépendants, les régressions et le build. Ce replay utilise de vraies observations ; il n’est pas une validation live future. Des échantillons courts restent explicitement insuffisants.
+
+`DARWIN_RESEARCH_CREATE_DRAFT_PR=true` autorise la publication d’une branche candidate et d’une PR brouillon après les tests via Git/gh déjà authentifiés. Les options automatiques de code/publication sont désactivées dans `.env.example` et doivent être activées localement. Aucune fusion, intégration ou activation du live. Un échec de publication reste visible et le candidat est conservé. Factory présente les lots, expériences comparatives, décisions, propositions et bilans des dernières 24 heures.
+
+
+### Manual Hyperliquid testnet validation
+
+The Hyperliquid page now includes a testnet-only preparation panel and an explicit
+order/cancel/reconciliation workflow. `/api/hyperliquid/validation/preflight` reads
+current public testnet book, account, fees, funding and approved API agents.
+The test requires a dedicated, approved, unexpired API wallet and a flat default
+perpetual account without open orders. It checks existing positions plus pending
+orders plus the proposed order against `HYPERLIQUID_MAX_NOTIONAL_USD`.
+
+Keep `HYPERLIQUID_ENABLED=false`. To run a manual test after configuring a testnet
+account, set `HYPERLIQUID_NETWORK=testnet` and
+`HYPERLIQUID_TESTNET_VALIDATION=true` locally, provide the account address and API
+wallet key in the existing local environment variables, and restart Darwin.
+Never paste the key into the UI, agents or a PR. Approve the API wallet yourself
+on the official Hyperliquid testnet API page. No key is generated, transported or
+stored by this UI. Merely connecting MetaMask does not approve the API wallet.
+
+The separate testnet endpoint recomputes checks, persists a unique client order
+ID, submits one buy limit order with `Alo` (post-only), attempts to cancel only
+that order, and reads back its status and account position. It uses the official
+SDK and a fixed testnet URL, regardless of the wallet viewer network selector.
+An unresolved/partially filled order blocks further tests; the reconciliation
+button cancels that same client order ID and checks again. It never liquidates a
+position automatically. Restart-interrupted tests remain in the SQLite journal
+and can be reconciled after two minutes. Unknown order identity remains blocked
+for manual investigation. The journal is `data/testnet-validation.sqlite` (or
+under `DARWIN_DATA_DIR`). These endpoints are local-only, not agent tools.
+
+Passing means this specific order was accepted, canceled, and left no position
+or open order on the inspected account scope. It does not validate market orders,
+liquidations, all failure modes, HIP-3/subaccount aggregation, profitability or
+mainnet readiness. The funding rate is displayed, not added to existing paper
+accounting. Mainnet activation remains a separate human decision; this panel
+cannot enable it. Software test doubles are not claimed as exchange validation.

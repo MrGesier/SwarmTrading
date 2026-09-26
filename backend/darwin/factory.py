@@ -58,6 +58,7 @@ def factory_state(supervisor: Any, agent_state: dict[str, Any], execution_state:
     champion_id = (state.get("champion") or {}).get("id")
     leader = next((r for r in state.get("leaderboard", []) if r.get("strategy_id") == champion_id), None)
     return {
+        "lab": supervisor.lab.state(),
         "ts": time.time(),
         "symbol": supervisor.symbol,
         "mode": supervisor.mode,
@@ -86,6 +87,7 @@ def factory_state(supervisor: Any, agent_state: dict[str, Any], execution_state:
             "principle": "Models reason; code measures and gates capital.",
         },
         "research": {
+            "agent_runs": research.get("agent_runs", []),
             "eligible": (research.get("evidence") or {}).get("eligible", 0),
             "multiple_test_pass": (research.get("evidence") or {}).get("multiple_test_pass", 0),
             "family_cells": research.get("family_cells", [])[:8],

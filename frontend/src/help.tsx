@@ -12,7 +12,7 @@ export const explanations: Record<string, string> = {
   "EFFECTIVE STRATEGIES":
     "Nombre effectif d’opinions indépendantes, calculé avec la matrice de corrélation des 120 derniers vecteurs de signaux. 320 variantes ne sont pas 320 avis indépendants. Les signaux constants sont exclus ; les poids sont recalculés toutes les cinq observations.",
   "Price & trigger zones":
-    "Bougies de cinq secondes construites à partir des trades reçus. Les bandes indiquent des niveaux hypothétiques où le poids des stratégies change de direction. Ce sont des sensibilités du modèle, pas des ordres réels du marché.",
+    "Bougies source de cinq secondes, regroupables en 15 s, 30 s, 1 min ou 5 min. La durée des bougies règle seulement l’affichage, avec une échelle automatique ; elle ne change pas l’horizon des stratégies. Seul l’historique disponible est affiché. Les bandes indiquent des niveaux hypothétiques où le poids des stratégies change de direction. Ce sont des sensibilités du modèle, pas des ordres réels du marché.",
   "Liquidity landscape":
     "Chaque colonne représente un instant ; chaque ligne, une zone de prix. Une couleur plus intense indique davantage de liquidité au repos dans les 40 premiers niveaux de chaque côté. La ligne claire est le midpoint. Une disparition de liquidité ne prouve pas une annulation ou du spoofing.",
   "Order-book physics":

@@ -140,7 +140,7 @@ export function Technical({
               </p>
             ) : (
               <>
-                <div className="surface-grid">
+                <div className="surface-grid" style={{minWidth:480, fontSize:11}}>
                   <span className="surface-axis">Vol. / Prix</span>
                   {analysis.surface[0].map((c) => (
                     <span className="surface-axis" key={c.bp}>

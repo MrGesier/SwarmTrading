@@ -104,6 +104,7 @@ def test_agent_registry_has_unique_human_colors_and_execution_boundary():
 
 
 def test_brain_policy_separates_reasoning_from_deterministic_authority(monkeypatch):
+    monkeypatch.setenv("DARWIN_RESEARCH_PROVIDER", "openai")
     from agents import AGENT_SPECS, DarwinBrains
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -123,6 +124,7 @@ def test_brain_policy_separates_reasoning_from_deterministic_authority(monkeypat
 
 
 def test_openai_fallback_is_structured_and_cerberus_fails_closed(monkeypatch):
+    monkeypatch.setenv("DARWIN_RESEARCH_PROVIDER", "openai")
     from agents import DarwinBrains
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -410,3 +412,45 @@ def test_evolution_history_tracks_measured_progress(tmp_path):
     threshold_gene = next(x for x in evo["gene_evolution"] if x["name"] == "threshold")
     assert threshold_gene["mutations"] == 1
     assert evo["definition"].startswith("Paper-research")
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_trade_context_excursions_and_gross_accounting(direction, tmp_path):
+    g = dict(id="telemetry", family="Momentum", horizon=180, threshold=.01, gain=2,
+             stop_loss_bps=200, take_profit_bps=200, max_hold_seconds=1000)
+    a = PaperAccount(g, notional_usd=1000, fee_bps=3.5)
+    a._open(direction, state(0, 100))
+    # A risk-off closure still records the final observed excursion for either side.
+    a.observe(state(10, 100 + direction * .1, "STALE"))
+    t = a.closed_trade_log[-1]
+    assert t["mfe_bps"] == pytest.approx(10)
+    assert t["mae_bps"] == 0
+    assert t["entry_context"]["weighted_imbalance"] == .15
+    assert t["gross_pnl_usd"] == pytest.approx(t["net_pnl_usd"] + t["fees_usd"])
+    assert t["closed_at"] - t["opened_at"] == 10
+    store = DarwinStore(tmp_path / "trades.sqlite")
+    store.save_trades([t])
+    assert store.recent_trades()[0] == t
+
+
+def test_agent_audit_roundtrip_and_history_cursor(tmp_path, monkeypatch):
+    from agents.llm import AgentBrain
+    from agents.openrouter_free import FreeProvider
+    monkeypatch.setenv("DARWIN_LLM_ENABLED", "true")
+    monkeypatch.setenv("DARWIN_BRAIN_CURIE", "openrouter-free")
+    brain = AgentBrain("curie", "system")
+    store = DarwinStore(tmp_path / "audit.sqlite")
+    for status, real in [("connected", True), ("cached", False), ("quota_exhausted", False)]:
+        monkeypatch.setattr(FreeProvider, "ask", lambda self, **kw: {
+            "status": status, "real_call": real, "data": {"ok": True}, "model": "test:free"})
+        result = brain.ask_json(task="Assess fees and imbalance", context={"fees": 12},
+            schema_name="test", schema={}, fallback={"ok": False})
+        assert result.audit["real_call"] is real
+        assert result.audit["provider_status"] == status
+        store.add_agent_run(result.to_dict())
+    newest = store.recent_agent_runs(2)
+    older = store.recent_agent_runs(2, before_id=newest[-1]["id"])
+    assert len(older) == 1 and older[0]["id"] < newest[-1]["id"]
+    assert older[0]["audit"]["task"] == "Assess fees and imbalance"
+    assert '12' in older[0]["audit"]["context_preview"]
+    assert newest[0]["ok"] is False

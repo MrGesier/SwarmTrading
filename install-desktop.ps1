@@ -8,7 +8,7 @@ foreach ($item in @(@{Name='SwarmTrading - Mister Gesier';Script='launch.ps1'}, 
     $shortcut.WorkingDirectory = $PSScriptRoot
     $shortcut.Description = 'Swarm Trade by Mister Gesier - application locale'
     $shortcut.WindowStyle = 7
-    $icon = Join-Path $PSScriptRoot 'frontend\public\mister-gesier.ico'
+    $icon = Join-Path $PSScriptRoot 'frontend\public\darwin-owl.ico'
     if (Test-Path -LiteralPath $icon) { $shortcut.IconLocation = $icon }
     $shortcut.Save()
     Write-Host ('Created: ' + (Join-Path $desktopDir ($item.Name + '.lnk')))

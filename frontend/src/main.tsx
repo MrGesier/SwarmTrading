@@ -22,6 +22,8 @@ import {
 import type { State, Strategy, Transition } from "./types";
 import {
   PriceChart,
+  LineChart,
+  TriggerChart,
   Liquidity,
   Spark,
   Phase,
@@ -32,12 +34,14 @@ import {
 import "./style.css";
 import { Help } from "./help";
 import { Technical } from "./technical";
+import { HyperliquidWallet } from "./wallet";
 import { DarwinLab } from "./darwin";
 import { DarwinFactory } from "./factory";
 import { API, wsUrl } from "./api";
 const horizonLabel = (h: number) => (h >= 60 ? `${h / 60} min` : `${h}s`);
 
 const routes = [
+  { name: "Wallet Hyperliquid", icon: ShieldCheck, path: "/hyperliquid" },
   { name: "Marché", icon: Grid2X2, path: "/" },
   { name: "Diagnostic des signaux", icon: Zap, path: "/intent" },
   { name: "Population des signaux", icon: Workflow, path: "/research" },
@@ -96,6 +100,7 @@ function Metric({
       {values && (
         <Spark
           values={values}
+          label={label}
           color={
             color === "purple"
               ? "#ad9be9"
@@ -112,7 +117,7 @@ function Metric({
 function App() {
   const [route, setRoute] = useState(location.pathname),
     [symbol, setSymbol] = useState("BTCUSDT"),
-    [mode, setMode] = useState("simulation"),
+    [mode] = useState("live"),
     [horizon, setHorizon] = useState(5);
   const [live, setLive] = useState<State | null>(null),
     [connection, setConnection] = useState("Connecting to local engine…"),
@@ -321,8 +326,8 @@ function App() {
         >
           <span className="brand-icon">
             <img
-              src="/mister-gesier-logo.png"
-              alt="Crêtes des Pyrénées et courbe de trading"
+              src="/darwin-owl.png"
+              alt="Swarm Trading — chouette terracotta"
             />
           </span>
           <span>
@@ -349,7 +354,7 @@ function App() {
               {route === r.path && <span className="nav-indicator" />}
             </a>
           ))}
-          <details className="nav-advanced"><summary>Diagnostics avancés</summary>{routes.filter(r => !["/", "/darwin", "/factory"].includes(r.path)).map(r => <a key={r.path} href={r.path} className={route===r.path?"active":""} onClick={e=>{e.preventDefault();navigate(r.path)}}><r.icon size={16}/>{r.name}</a>)}</details>
+          <details className="nav-advanced"><summary>Diagnostics avancés</summary>{routes.filter(r => !["/", "/darwin", "/factory", "/hyperliquid"].includes(r.path)).map(r => <a key={r.path} href={r.path} className={route===r.path?"active":""} onClick={e=>{e.preventDefault();navigate(r.path)}}><r.icon size={16}/>{r.name}</a>)}</details>
         </nav>
         <div className="sidebar-note">
           <Layers3 size={19} />
@@ -360,6 +365,7 @@ function App() {
             One synchronized market state.
           </p>
         </div>
+        <a className={`wallet-access ${route==="/hyperliquid"?"active":""}`} href="/hyperliquid" onClick={e=>{e.preventDefault();navigate("/hyperliquid");}} title="Wallet Hyperliquid / MetaMask"><ShieldCheck size={18}/><span>Wallet & connexion</span></a>
         <div className="engine-status">
           <span className={`dot ${isHealthy ? "" : "amber-dot"}`} />
           <div>
@@ -407,7 +413,9 @@ function App() {
                 <span className="heading-dot" />
               </h1>
               <p>
-                {route === "/intent"
+                {route === "/hyperliquid"
+                  ? "Connectez une adresse publique et consultez votre compte, sans autoriser d’ordres."
+                  : route === "/intent"
                   ? "Explore the market states that could move the swarm."
                   : route === "/research"
                     ? "Inspect independent hypotheses and effective support."
@@ -486,15 +494,7 @@ function App() {
               </b>
             </div>
             <div className="stream-controls">
-              <select
-                aria-label="Data mode"
-                className={mode === "simulation" ? "simulation-select" : ""}
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-              >
-                <option value="simulation">◉ Simulation</option>
-                <option value="live">◉ Hyperliquid · données réelles</option>
-              </select>
+              <span className="paper-source">Hyperliquid · données actuelles · PAPER</span>
               {route !== "/darwin" && route !== "/factory" && <><select
                 aria-label="Strategy horizon"
                 value={horizon}
@@ -517,24 +517,10 @@ function App() {
               stratégies de cet horizon restent neutres.
             </div>
           )}
-          {mode === "simulation" && (
-            <div className="simulation-note">
-              <FlaskConical size={14} /> SIMULATED DATA{" "}
-              <span>
-                Deterministic market simulation · research scores are
-                uncalibrated
-              </span>
-            </div>
-          )}
           {connection && (
             <div className="notice">
               <Radio size={16} />
               {connection}
-              {mode === "live" && (
-                <button onClick={() => setMode("simulation")}>
-                  Use simulation
-                </button>
-              )}
             </div>
           )}
           {error && (
@@ -549,7 +535,7 @@ function App() {
               {s.health.message || "Waiting for a consistent, fresh order book"}
             </div>
           )}
-          {!s ? (
+          {route === "/hyperliquid" ? <HyperliquidWallet /> : !s ? (
             <div className="empty">
               <Activity size={38} />
               <h2>Waiting for market state</h2>
@@ -663,13 +649,8 @@ function App() {
                         title="Price & trigger zones"
                         label={
                           <span className="chart-tools">
-                            <span>5s candles</span>
-                            <button
-                              className={vwap ? "toggle selected" : "toggle"}
-                              onClick={() => setVwap(!vwap)}
-                            >
-                              VWAP
-                            </button>
+                            <span>OHLCV · observé</span>
+
                             <span className="live-label">
                               {replay && frames.length
                                 ? "REPLAY"
@@ -688,6 +669,7 @@ function App() {
                           <span className="positive">— Trigger zones</span>
                         </div>
                         <PriceChart
+                          key={symbol}
                           state={s}
                           vwap={vwap}
                           onSeek={replay ? seek : undefined}
@@ -701,7 +683,7 @@ function App() {
                           </span>
                         }
                       >
-                        <Liquidity history={s.history} />
+                        <Liquidity key={symbol} history={s.history} />
                         <div className="legend-row">
                           <span>
                             <i className="line-key" /> Midpoint
@@ -840,43 +822,14 @@ function App() {
                   </div>
                   <div className="bottom-grid">
                     <Panel title="Trigger density" label="±30 bp">
-                      <div className="trigger-chart">
-                        {s.triggers
-                          .filter((_, i) => i % 2 === 0)
-                          .reverse()
-                          .map((t) => (
-                            <div
-                              key={t.bp}
-                              title={`Opposing depth: ${fmt(t.resistance)} base units`}
-                            >
-                              <span>{signed(t.bp, 0)} bp</span>
-                              <i
-                                style={{
-                                  width: `${(t.density / Math.max(...s.triggers.map((t) => t.density), 1)) * 65}%`,
-                                  background:
-                                    t.bp > 0 ? "var(--green)" : "var(--red)",
-                                }}
-                              />
-                              <b>{fmt(t.density, 1)}</b>
-                            </div>
-                          ))}
-                      </div>
-                      <p className="panel-note">
-                        Effective strategies changing direction
-                      </p>
+                      <TriggerChart state={s}/>
                     </Panel>
                     <Panel title="Entropy stack" label="NORMALIZED 0–1">
                       <div className="entropy-value">
                         {fmt(s.entropy.market)}
                         <small>Market composite</small>
                       </div>
-                      <div className="entropy-spark">
-                        <Spark
-                          values={s.history.map((h) => h.market_entropy)}
-                          color="#ad9be9"
-                          height={65}
-                        />
-                      </div>
+                      <LineChart label="Entropie du marché" unit="0–1" values={s.history.map(h=>h.market_entropy)} times={s.history.map(h=>h.time)}/>
                       {[
                         ["Price sign", s.entropy.price],
                         ["Trade aggressor", s.entropy.trade],
