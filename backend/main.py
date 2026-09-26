@@ -272,7 +272,10 @@ class Session:
                 now = time.time()
                 if self.book.valid and now - last_emit >= .5:
                     self.derive(now)
-                    last_emit = now
+                    # Schedule from completion, not start: an expensive derivation must
+                    # not trigger another one immediately for every buffered event.
+                    last_emit = time.time()
+                    await asyncio.sleep(0)
                 if len(self.recorder.rows) >= 1000:
                     await self.recorder.flush()
             except asyncio.CancelledError:

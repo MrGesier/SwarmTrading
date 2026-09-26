@@ -89,3 +89,26 @@ def test_risk_diagnostics_explain_warmup_and_recovery_without_bypassing_gate(mon
     assert frame(1002)["state"]=="RISK_OFF"
     released=frame(1003)
     assert released["state"]=="NEUTRAL" and released["risk_causes"]==[]
+
+
+def test_slow_hyperliquid_derivation_does_not_recompute_for_every_buffered_event(monkeypatch):
+    import main
+    from types import SimpleNamespace
+    clock=[100.0];calls=[]
+    class Stream:
+        async def events(self):
+            for _ in range(4):
+                clock[0]+=.1
+                yield clock[0],{"type":"snapshot"}
+    monkeypatch.setattr(main,"HyperliquidPublicStream",lambda _:Stream())
+    monkeypatch.setattr(main.time,"time",lambda:clock[0])
+    session=main.Session.__new__(main.Session)
+    session.symbol="BTCUSDT";session.book=SimpleNamespace(valid=True)
+    session.recorder=SimpleNamespace(rows=[])
+    session.ingest=lambda *_:None
+    def slow_derive(ts):
+        calls.append(ts);clock[0]+=2
+    session.derive=slow_derive
+    asyncio.run(session.live_hyperliquid())
+    assert len(calls)==1
+    assert session.health=="HEALTHY"
