@@ -62,6 +62,7 @@ export function Technical({
     [fee, setFee] = useState(10),
     [error, setError] = useState("");
   const [cell, setCell] = useState<Cell | null>(null);
+  const [surfaceZoom, setSurfaceZoom] = useState(1);
   const symbol = state.symbol,
     mode = state.mode,
     tick = Math.floor(state.timestamp / 2);
@@ -131,6 +132,7 @@ export function Technical({
       {error && <p className="panel-note negative">{error}</p>}
       <div className="lab-grid">
         <Block title="Trigger surface" label="PRIX × VOLATILITÉ">
+          <div className="plot-toolbar surface-toolbar"><label>Zoom de la matrice<input type="range" aria-label="Zoom de la matrice de déclenchement" min="0.75" max="1.5" step="0.25" value={surfaceZoom} onChange={e=>setSurfaceZoom(Number(e.target.value))}/>{surfaceZoom}×</label><span>Instantané · pas un axe temporel</span></div>
           <div className="surface-content">
             {!ready ? (
               <p className="panel-note">
@@ -140,7 +142,7 @@ export function Technical({
               </p>
             ) : (
               <>
-                <div className="surface-grid">
+                <div className="surface-grid" style={{minWidth:480*surfaceZoom, fontSize:11*surfaceZoom}}>
                   <span className="surface-axis">Vol. / Prix</span>
                   {analysis.surface[0].map((c) => (
                     <span className="surface-axis" key={c.bp}>

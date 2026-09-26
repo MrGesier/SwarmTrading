@@ -5,6 +5,7 @@ import {ResearchActivity} from "./research-activity";
 import {Autocorrection} from "./autocorrection";
 import React, { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Crown, FastForward, FlaskConical, Pause, Play, RotateCcw, Shield, Sparkles, Wrench, X } from "lucide-react";
+import {LineChart} from "./charts";
 import { API, wsUrl } from "./api";
 
 export type FactoryEvent = {
@@ -64,12 +65,8 @@ function EventCourier({event}:{event?:FactoryEvent}){if(!event)return null;retur
 function JudgeStamp({event}:{event?:FactoryEvent}){if(!event||event.type!=="judge_decision")return null;const d=String(event.payload?.decision??"WAIT").toUpperCase();return <div key={`judge-${event.id}`} className={`judge-stamp ${d.toLowerCase()}`}><b>{d}</b><small>{<StrategyName id={event.strategy_id??"strategy"}/>}</small></div>}
 function CrownBurst({event}:{event?:FactoryEvent}){if(!event||event.type!=="champion_promoted")return null;return <div key={`crown-${event.id}`} className="crown-burst"><i>✨</i><i>👑</i><i>✨</i><i>★</i><i>✨</i></div>}
 
-function Sparkline({values,label}:{values:number[];label:string}){
-  const clean=values.filter(v=>Number.isFinite(v));
-  if(clean.length<2)return <div className="evo-spark empty"><small>{label}</small><span>Collecte des premières mesures…</span></div>;
-  const min=Math.min(...clean), max=Math.max(...clean), span=Math.max(1e-9,max-min);
-  const points=clean.map((v,i)=>`${(i/(clean.length-1))*100},${38-((v-min)/span)*34}`).join(" ");
-  return <div className="evo-spark"><small>{label}</small><svg viewBox="0 0 100 42" preserveAspectRatio="none"><polyline points={points}/></svg><b>{signed(clean.at(-1),1)}</b></div>;
+function Sparkline({values,label,times,epochs=false}:{values:(number|null)[];label:string;times?:number[];epochs?:boolean}){
+ return <LineChart values={values} times={times} label={label} epochs={epochs} zero/>;
 }
 function deltaClass(v:any, inverse=false){const n=Number(v);if(!Number.isFinite(n)||Math.abs(n)<1e-9)return "";const good=inverse?n<0:n>0;return good?"positive":"negative"}
 
@@ -157,7 +154,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         <div><small>TÉMOIN G0 · NET</small><b>{fmt(state.pnl?.fixed_g0?.mean_net_usd)} USD</b><span>{state.pnl?.fixed_g0?.count??0} stratégies conservées</span></div>
         <div><small>DESCENDANTS · NET</small><b>{fmt(state.pnl?.descendants?.mean_net_usd)} USD</b><span>{state.pnl?.descendants?.count??0} descendants</span></div>
       </div>
-      <div className="evo-sparks">{["active","fixed_g0","descendants"].map(group=><Sparkline key={group} label={`${group==="active"?"Stratégies actives":group==="fixed_g0"?"Témoin G0":"Descendants"} · net USD`} values={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start&&x[group]?.mean_net_usd!=null).map(x=>x[group].mean_net_usd)}/>)}</div>
+      <div className="evo-sparks">{["active","fixed_g0","descendants"].map(group=><Sparkline key={`${group}-${state.pnl?.window_start}`} label={`${group==="active"?"Stratégies actives":group==="fixed_g0"?"Témoin G0":"Descendants"} · net USD`} values={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start).map(x=>x[group]?.mean_net_usd??null)} times={(state.pnl_history??[]).filter(x=>x.window_start===state.pnl?.window_start).map(x=>x.recorded_at)} />)}</div>
       {!state.pnl?.control_window_matches && <p role="status">Comparaison en attente : G0 et descendants ont démarré sur des fenêtres différentes.</p>}
       <details className="pnl-method"><summary>Comprendre ces chiffres et les frais</summary><p>Chaque stratégie possède un compte paper indépendant : leur moyenne n’est pas un portefeuille. Historique par minute. Spread, profondeur visible et frais modélisés ; funding et impact réel non modélisés. Aucune aptitude au live démontrée.</p></details>
     </section>
@@ -235,7 +232,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
         <div><small>GENERATION</small><b>G{evolution.lineage?.max_generation??0}</b><span>{evolution.historical_population??state.historical_population} genomes seen</span></div>
       </div>
       <div className="evolution-grid">
-        <div className="evolution-chart-card"><div className="evo-card-head"><b>Progress through epochs</b><small>rolling history stored in SQLite</small></div><div className="evo-sparks"><Sparkline label="Quality index" values={evoHistory.map((x:any)=>Number(x.research_quality_index))}/><Sparkline label="Champion alpha bp" values={evoHistory.map((x:any)=>Number(x.champion_alpha_bps))}/><Sparkline label="Fee stress bp" values={evoHistory.map((x:any)=>Number(x.champion_fee_stress_bps))}/></div><div className="epoch-ribbon">{evoHistory.slice(-16).map((x:any)=><span key={x.epoch_id} className={x.champion_id===state.champion?.id?"current":""} title={`Epoch ${x.epoch_id} · ${x.champion_id} · Q ${fmt(x.research_quality_index,1)}`}><i style={{height:`${Math.max(8,Math.min(100,Number(x.research_quality_index)||0))}%`}}/><small>E{x.epoch_id}</small></span>)}</div></div>
+        <div className="evolution-chart-card"><div className="evo-card-head"><b>Progress through epochs</b><small>rolling history stored in SQLite</small></div><div className="evo-sparks"><Sparkline label="Quality index" values={evoHistory.map((x:any)=>x.research_quality_index==null?null:Number(x.research_quality_index))} times={evoHistory.map((x:any)=>x.epoch_id)} epochs/><Sparkline label="Champion alpha bp" values={evoHistory.map((x:any)=>x.champion_alpha_bps==null?null:Number(x.champion_alpha_bps))} times={evoHistory.map((x:any)=>x.epoch_id)} epochs/><Sparkline label="Fee stress bp" values={evoHistory.map((x:any)=>x.champion_fee_stress_bps==null?null:Number(x.champion_fee_stress_bps))} times={evoHistory.map((x:any)=>x.epoch_id)} epochs/></div><div className="epoch-ribbon">{evoHistory.slice(-16).map((x:any)=><span key={x.epoch_id} className={x.champion_id===state.champion?.id?"current":""} title={`Epoch ${x.epoch_id} · ${x.champion_id} · Q ${fmt(x.research_quality_index,1)}`}><i style={{height:`${Math.max(8,Math.min(100,Number(x.research_quality_index)||0))}%`}}/><small>E{x.epoch_id}</small></span>)}</div></div>
         <div className="evolution-chart-card"><div className="evo-card-head"><b>Lineage ladder</b><small>descendants that survived selection</small></div><div className="generation-ladder">{(evolution.lineage?.generation_counts??[]).map((g:any)=><div key={g.generation}><span>G{g.generation}</span><div><i style={{width:`${Math.max(2,(g.active/Math.max(1,g.total))*100)}%`}}/></div><b>{g.active}/{g.total}</b></div>)}</div><div className="family-wins"><small>CHAMPION EPOCHS BY FAMILY</small>{(evolution.lineage?.family_champion_epochs??[]).slice(0,5).map((f:any)=><span key={f.family}><b>{f.family}</b><i style={{width:`${Math.min(100,(f.epochs/Math.max(1,evolution.epochs_observed))*100)}%`}}/><em>{f.epochs}</em></span>)}</div></div>
         <div className="evolution-chart-card gene-evolution"><div className="evo-card-head"><b>What Darwin is changing</b><small>mutation pressure by gene</small></div>{(evolution.gene_evolution??[]).map((g:any)=><div className="gene-evo-row" key={g.name}><span><b>{g.label}</b><small>median {g.active_median==null?"—":fmt(g.active_median,g.name==="confirmation_ticks"?0:2)} {g.unit??""}</small></span><div><i style={{width:`${Math.min(100,(g.mutations/Math.max(1,...(evolution.gene_evolution??[]).map((x:any)=>x.mutations)))*100)}%`}}/></div><em>{g.mutations}×</em></div>)}</div>
       </div>

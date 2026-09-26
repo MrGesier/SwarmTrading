@@ -22,6 +22,8 @@ import {
 import type { State, Strategy, Transition } from "./types";
 import {
   PriceChart,
+  LineChart,
+  TriggerChart,
   Liquidity,
   Spark,
   Phase,
@@ -98,6 +100,7 @@ function Metric({
       {values && (
         <Spark
           values={values}
+          label={label}
           color={
             color === "purple"
               ? "#ad9be9"
@@ -645,7 +648,7 @@ function App() {
                         title="Price & trigger zones"
                         label={
                           <span className="chart-tools">
-                            <span>5s candles</span>
+                            <span>OHLCV · observé</span>
                             <button
                               className={vwap ? "toggle selected" : "toggle"}
                               onClick={() => setVwap(!vwap)}
@@ -670,6 +673,7 @@ function App() {
                           <span className="positive">— Trigger zones</span>
                         </div>
                         <PriceChart
+                          key={symbol}
                           state={s}
                           vwap={vwap}
                           onSeek={replay ? seek : undefined}
@@ -683,7 +687,7 @@ function App() {
                           </span>
                         }
                       >
-                        <Liquidity history={s.history} />
+                        <Liquidity key={symbol} history={s.history} />
                         <div className="legend-row">
                           <span>
                             <i className="line-key" /> Midpoint
@@ -822,43 +826,14 @@ function App() {
                   </div>
                   <div className="bottom-grid">
                     <Panel title="Trigger density" label="±30 bp">
-                      <div className="trigger-chart">
-                        {s.triggers
-                          .filter((_, i) => i % 2 === 0)
-                          .reverse()
-                          .map((t) => (
-                            <div
-                              key={t.bp}
-                              title={`Opposing depth: ${fmt(t.resistance)} base units`}
-                            >
-                              <span>{signed(t.bp, 0)} bp</span>
-                              <i
-                                style={{
-                                  width: `${(t.density / Math.max(...s.triggers.map((t) => t.density), 1)) * 65}%`,
-                                  background:
-                                    t.bp > 0 ? "var(--green)" : "var(--red)",
-                                }}
-                              />
-                              <b>{fmt(t.density, 1)}</b>
-                            </div>
-                          ))}
-                      </div>
-                      <p className="panel-note">
-                        Effective strategies changing direction
-                      </p>
+                      <TriggerChart state={s}/>
                     </Panel>
                     <Panel title="Entropy stack" label="NORMALIZED 0–1">
                       <div className="entropy-value">
                         {fmt(s.entropy.market)}
                         <small>Market composite</small>
                       </div>
-                      <div className="entropy-spark">
-                        <Spark
-                          values={s.history.map((h) => h.market_entropy)}
-                          color="#ad9be9"
-                          height={65}
-                        />
-                      </div>
+                      <LineChart label="Entropie du marché" unit="0–1" values={s.history.map(h=>h.market_entropy)} times={s.history.map(h=>h.time)}/>
                       {[
                         ["Price sign", s.entropy.price],
                         ["Trade aggressor", s.entropy.trade],

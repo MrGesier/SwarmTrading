@@ -2179,3 +2179,40 @@ footer i {
 .validation-checks span{color:#e6ae78}
 .testnet-validation article{border-top:1px solid #594638;padding:1rem 0}
 .testnet-validation input[type=checkbox]{width:auto;margin-right:.5rem}
+.interactive-chart{padding:12px 14px;color:#ded6cb;min-width:0;overflow:hidden}
+.interactive-chart h4{margin:2px 0 12px;font-size:14px;color:#eee4d6}
+.plot-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:9px;font-size:11px}
+.plot-toolbar label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#c7baaa}
+.plot-toolbar select,.plot-toolbar button{font:inherit;color:#e7ded1;background:#20272d;border:1px solid #4c4944;border-radius:7px;min-height:30px;padding:5px 8px;max-width:100%}
+.plot-toolbar button[aria-pressed=true]{border-color:#d6a677;background:#413126}
+.plot-toolbar button:disabled{opacity:.4;cursor:default}
+.plot-toolbar input[type=range]{width:90px;accent-color:#d6a677}
+.plot-toolbar :focus-visible{outline:2px solid #e1b98c;outline-offset:2px}
+.plot-readout{font:11px/1.6 ui-monospace,monospace;color:#d6c9b9;min-height:36px;padding:5px 0;font-variant-numeric:tabular-nums}
+.controlled-plot{display:block;width:100%;height:auto;background:#111820;border-radius:8px;touch-action:pan-y;user-select:none}
+.controlled-plot text{font:11px ui-monospace,monospace;fill:#b7b3aa}
+.controlled-plot line,.controlled-plot path,.controlled-plot polyline{vector-effect:non-scaling-stroke}
+.plot-grid{stroke:#33404a;stroke-dasharray:3 5;stroke-width:1}
+.plot-note{font-size:11px;line-height:1.6;color:#a99e91;margin:10px 0 2px}
+.controlled-heatmap{width:100%;height:240px;margin:0;background:#111820;border-radius:8px}
+.evo-sparks{grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px}
+.evo-sparks .line-chart{border:1px solid #45413c;border-radius:12px;background:#121a21}
+.trigger-bars{max-height:340px;overflow:auto;padding:8px 0;display:grid;gap:6px}
+.trigger-bars>div{display:grid;grid-template-columns:86px 1fr 48px;gap:8px;align-items:center;font:11px ui-monospace,monospace;min-height:17px}
+.trigger-bars>div>div{background:#242e36;border-radius:3px;overflow:hidden}
+.trigger-bars i{height:7px;display:block;border-radius:3px}
+.trigger-bars b{text-align:right;font-weight:500}
+.chart-sub{flex-wrap:wrap;gap:8px}
+.main-column,.right-column,.bottom-grid>*,.lab-grid>*{min-width:0}
+@media(max-width:700px){.interactive-chart{padding:10px 8px}.plot-toolbar{gap:5px}.plot-toolbar select,.plot-toolbar button{min-height:36px}.bottom-grid{grid-template-columns:1fr}.chart-sub .gold{margin-left:0}}
+.mini-history{font-size:11px;line-height:1.5;margin-top:6px;color:#bcb1a3}
+.mini-history summary,.axis-options summary{cursor:pointer;font-size:11px;padding:6px 0;color:#d6ba98}
+.metric:has(.mini-history[open]){grid-column:1/-1;height:auto;min-height:200px}
+.mini-history[open] .interactive-chart{max-width:900px}
+.axis-options{margin:4px 0}
+.surface-toolbar{padding:10px 15px 0}
+.surface-content{overflow-x:auto}
+.surface-grid .surface-cell,.surface-grid .surface-axis{font-size:inherit}
+.metric > .spark{position:static;width:100%;height:32px;opacity:.8;margin-top:10px}
+.autocorrection-panel > label{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.autocorrection-panel > label select{min-width:0;max-width:100%}
