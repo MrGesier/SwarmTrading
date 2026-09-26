@@ -27,6 +27,8 @@ from dotenv import load_dotenv
 from engine import Engine, OrderBook, GENOMES, HORIZONS, SequenceGap
 from analysis import technical_analysis, cost_preview
 from darwin import DarwinSupervisor
+from darwin.portfolio import SharedPortfolio
+from marketdata.portfolio_service import PortfolioFeeds
 from execution.hyperliquid import HyperliquidExecutor
 from agents import agent_runtime_state, policy_state
 from agents.openbot_agui import COWORKERS as OPENBOT_COWORKERS, AGUIAdapter as OPENBOT_AGUI_ADAPTER, authorised as openbot_authorised, available as openbot_available, get_agent as get_openbot_agent, state as openbot_bridge_state
@@ -39,6 +41,8 @@ DEFAULT_DATA_DIR = '/tmp/swarmtrade-data' if os.getenv('VERCEL') else str(PROJEC
 DATA = Path(os.getenv('DARWIN_DATA_DIR', DEFAULT_DATA_DIR))
 DATA.mkdir(parents=True, exist_ok=True)
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+shared_portfolio = SharedPortfolio(DATA / 'shared-portfolio-v1.json')
+portfolio_feeds = PortfolioFeeds(shared_portfolio)
 
 
 class Recorder:
@@ -118,7 +122,7 @@ class Session:
                 self.book.valid = bool(bids and asks and bids[0][0] < asks[0][0])
                 self.last_depth = ts
         elif event['type'] == 'context':
-            self.venue_context = dict(event.get('data') or {})
+            self.venue_context = {**dict(event.get('data') or {}), 'received_at': ts}
         elif event['type'] == 'depth':
             if self.book.update(event['data']):
                 self.last_depth = ts
@@ -143,6 +147,7 @@ class Session:
             self.states.append(state)
             try:
                 self.darwin.observe(state)
+                portfolio_feeds.observe(state, [a.strategy for a in self.darwin.population.accounts.values()])
                 if self.darwin.due() and (self.research_task is None or self.research_task.done()):
                     self.research_task = asyncio.create_task(self.research_cycle())
                 self.darwin_error = ""
@@ -294,8 +299,12 @@ def get_session(symbol='BTCUSDT', mode='live'):
 async def lifespan(app):
     autostart_symbol = os.getenv('DARWIN_AUTOSTART_SYMBOL', 'BTCUSDT')
     autostart_mode = 'live'
-    get_session(autostart_symbol, autostart_mode)
+    for symbol in SYMBOLS:
+        get_session(symbol, autostart_mode)
+    portfolio_task = asyncio.create_task(portfolio_feeds.run())
     yield
+    portfolio_task.cancel()
+    await asyncio.gather(portfolio_task, return_exceptions=True)
     await asyncio.gather(*(s.research_task for s in sessions.values() if s.research_task), return_exceptions=True)
     for s in sessions.values():
         s.task.cancel()
@@ -443,6 +452,7 @@ async def darwin_state(symbol: str='BTCUSDT', mode: str='live'):
     s = get_session(symbol, mode)
     result = s.darwin.state()
     result['error'] = s.darwin_error
+    result['shared_portfolio'] = shared_portfolio.state()
     return result
 
 

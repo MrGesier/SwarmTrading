@@ -2227,3 +2227,5 @@ footer i {
 [aria-label="Suivi du capital paper"]>label{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0}
 [aria-label="Suivi du capital paper"] select{max-width:100%;min-width:0}
 [aria-label="Suivi du capital paper"]>.panel-note{line-height:1.6;margin:12px 0}
+
+.shared-portfolio{padding:20px;margin:20px 0;min-width:0}.shared-portfolio>p,.shared-portfolio details p{line-height:1.6;margin:12px 0}.shared-portfolio>details{margin-top:14px}.shared-portfolio .darwin-kpis{margin:16px 0}
