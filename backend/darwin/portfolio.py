@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import math
 import time
+import statistics
+from collections import Counter
 from pathlib import Path
 from .paper import _walk
 from .signals import raw_signal_for_genome
@@ -27,6 +29,7 @@ class SharedPortfolio:
         self.last_sequences = {}
         self.ready_since = {}
         self.confirmations = {}
+        self.market_diagnostics = {}
         self.data = dict(version=1, initial_eur=1000.0, cash_eur=1000.0,
                          fx=None, positions=[], closed=[], fees_eur=0.0,
                          funding_eur=0.0, next_id=1, history=[], cooldown={},
@@ -136,7 +139,7 @@ class SharedPortfolio:
             take=min(remaining,row[1]); row[1]-=take; remaining-=take
             if remaining<=1e-12: break
 
-    def close(self,p,now,reason):
+    def close(self,p,now,reason,context=None):
         if any(not self.fresh(l["instrument"],now) for l in p["legs"]): return False
         fills=[]
         for l in p["legs"]:
@@ -152,7 +155,7 @@ class SharedPortfolio:
             self.consume(l["instrument"],-l["qty"])
         self.data["fees_eur"]+=exit_fees
         self.data["closed"].append(dict(id=p["id"],strategy_id=p["strategy_id"],kind=p["kind"],opened_at=p["opened_at"],closed_at=now,
-            net_eur=pnl-p["entry_fees_eur"]-exit_fees+p["funding_eur"],fees_eur=p["entry_fees_eur"]+exit_fees,reason=reason,legs=[{**l,"exit":px,"exit_fee_eur":fee} for l,px,fee in fills]))
+            exit_context=context,net_eur=pnl-p["entry_fees_eur"]-exit_fees+p["funding_eur"],fees_eur=p["entry_fees_eur"]+exit_fees,reason=reason,legs=[{**l,"exit":px,"exit_fee_eur":fee} for l,px,fee in fills]))
         self.data["positions"].remove(p)
         if self.adaptive: update_decisions(self.data,now)
         self.data["cooldown"][p["strategy_id"]]=now
@@ -174,8 +177,15 @@ class SharedPortfolio:
             p["funding_at"]=now
 
     def observe(self, state, strategies, decimals):
-        if not self.fx: return
         now=time.time(); symbol=state["symbol"]; key="perp:"+symbol.replace("USDT","")
+        diagnostic=dict(symbol=symbol,ts=now,health=state.get("health",{}).get("status","UNKNOWN"),
+            intent=state.get("intent",{}).get("state","UNKNOWN"),
+            causes=state.get("intent",{}).get("risk_causes",[]),
+            confirmation_count=state.get("intent",{}).get("confirmation_count",0),
+            candidate_state=state.get("intent",{}).get("candidate_state"),
+            stage="WAIT_FX" if not self.fx else "WAIT_FEED",eligible_signals=0)
+        self.market_diagnostics[symbol]=diagnostic
+        if not self.fx: return
         if state.get("venue")!="HYPERLIQUID" or state.get("health",{}).get("status")!="HEALTHY":
             self.ready_since.pop(key,None)
             self.confirmations={k:v for k,v in self.confirmations.items() if not k.startswith(symbol+":")}
@@ -188,7 +198,10 @@ class SharedPortfolio:
         ctx=state.get("venue_context",{})
         if ctx.get("funding") is not None:
             self.funding[key]=(float(ctx["funding"]),float(ctx.get("received_at",0)))
-        if not self.fresh(key,now): return
+        if not self.fresh(key,now):
+            diagnostic["stage"]="STALE_BOOK"
+            return
+        diagnostic["stage"]="RISK_OFF" if diagnostic["intent"]=="RISK_OFF" else "EVALUATING"
         self.accrue_funding(now)
         active={s["id"]:s for s in strategies if s.get("status")!="KILLED"}
         for p in list(self.data["positions"]):
@@ -204,13 +217,18 @@ class SharedPortfolio:
             elif move>=g["take_profit_bps"]: reason="take_profit"
             elif age>=g["max_holding_seconds"]: reason="max_holding"
             elif age>=60 and (raw*l["qty"]<=0 or abs(raw)<g["exit_threshold"]): reason="signal_decay"
-            if reason: self.close(p,now,reason)
+            if reason: self.close(p,now,reason,dict(diagnostic))
         if state.get("intent",{}).get("state")=="RISK_OFF":
+            diagnostic["stage"]="RISK_OFF"
             self.ready_since.pop(key,None)
             self.confirmations={k:v for k,v in self.confirmations.items() if not k.startswith(symbol+":")}
             return
         self.ready_since.setdefault(key,now)
-        if now-self.ready_since[key]<15: return
+        if now-self.ready_since[key]<15:
+            diagnostic["stage"]="STABILIZING"
+            diagnostic["remaining_seconds"]=max(0,15-(now-self.ready_since[key]))
+            return
+        diagnostic["stage"]="EVALUATING"
         # One sleeve per family and market; every sleeve draws on the same ledger.
         used={p["policy"].get("family") for p in self.data["positions"] if p["kind"]=="directional" and p["legs"][0]["instrument"]==key}
         candidates=sorted(active.values(),key=lambda g:abs(raw_signal_for_genome(state["features"],g)),reverse=True)
@@ -223,6 +241,7 @@ class SharedPortfolio:
             if abs(raw)<g["threshold"]:
                 self.confirmations.pop(strategy_key,None)
                 continue
+            diagnostic["eligible_signals"]+=1
             count=count+1 if previous==direction else 1
             self.confirmations[strategy_key]=(direction,count)
             if count<int(g.get("confirmation_ticks",1)): continue
@@ -233,6 +252,7 @@ class SharedPortfolio:
             qty=math.floor(budget*self.fx/b["mid"]*10**decimals)/10**decimals
             if self.open(symbol+":"+g["id"],[dict(instrument=key,kind="perp",qty=qty*(1 if raw>0 else -1))],now,dict(g)):
                 used.add(g["family"])
+        diagnostic["stage"]="POSITIONS_OPEN" if any(p["kind"]=="directional" and p["legs"][0]["instrument"]==key for p in self.data["positions"]) else "ENTRY_FILTERS" if diagnostic["eligible_signals"] else "WAIT_SIGNAL"
         self.record(now)
 
     def pair(self,spot_key,now):
@@ -286,7 +306,10 @@ class SharedPortfolio:
             positions.append({**p,"net_eur":sum(self.leg_pnl(l) for l in p["legs"])-p["entry_fees_eur"]+p["funding_eur"],
                 "fresh":all(self.fresh(l["instrument"],now) for l in p["legs"]),
                 "delta_units":sum(l["qty"] for l in p["legs"]) if p["kind"]=="delta_neutral" else None})
-        return dict(initial_eur=1000,**t,pnl_eur=t["equity_eur"]-1000,max_leverage=3,
+        durations=[max(0,p["closed_at"]-p["opened_at"]) for p in self.data["closed"]]
+        return dict(observed_at=now,market_diagnostics=[{**d,"age_seconds":max(0,now-d["ts"])} for d in self.market_diagnostics.values()],
+            exit_summary=dict(total=len(durations),median_seconds=statistics.median(durations) if durations else None,
+                              reasons=dict(Counter(p["reason"] for p in self.data["closed"]))),initial_eur=1000,**t,pnl_eur=t["equity_eur"]-1000,max_leverage=3,
             positions=positions,closed=self.data["closed"][-100:],closed_count=len(self.data["closed"]),
             fees_eur=self.data["fees_eur"],funding_eur=self.data["funding_eur"],fx=self.data["fx"],
             funding_unobserved_seconds=self.data["funding_unobserved_seconds"],history=self.data["history"],

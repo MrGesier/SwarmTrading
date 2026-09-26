@@ -272,7 +272,10 @@ class Session:
                 now = time.time()
                 if self.book.valid and now - last_emit >= .5:
                     self.derive(now)
-                    last_emit = now
+                    # Schedule from completion, not start: an expensive derivation must
+                    # not trigger another one immediately for every buffered event.
+                    last_emit = time.time()
+                    await asyncio.sleep(0)
                 if len(self.recorder.rows) >= 1000:
                     await self.recorder.flush()
             except asyncio.CancelledError:
@@ -370,7 +373,7 @@ async def stream(ws: WebSocket, symbol: str = 'BTCUSDT', mode: str='live'):
     try:
         while True:
             if s.latest and time.time() - s.last_depth > 3:
-                s.latest = {**s.latest, 'health': {**s.latest['health'], 'status':'STALE', 'age_ms':round((time.time()-s.last_depth)*1000), 'message':s.error}, 'intent':{**s.latest['intent'], 'state':'RISK_OFF'}}
+                s.latest = {**s.latest, 'health': {**s.latest['health'], 'status':'STALE', 'age_ms':round((time.time()-s.last_depth)*1000), 'message':s.error}, 'intent':{**s.latest['intent'], 'state':'RISK_OFF', 'risk_causes':['FEED_STALE']}}
             await ws.send_json(s.latest or dict(status=s.health, message=s.error))
             await asyncio.sleep(.5)
     except (WebSocketDisconnect, RuntimeError):

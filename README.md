@@ -430,3 +430,13 @@ Le portefeuille adapte maintenant le budget directionnel par famille/marché à 
 Les événements d'allocation sont persistés et affichés dans « La boucle améliore-t-elle le capital ? ». Les familles perdantes et les IDs affectés alimentent le prochain lot CURIE et priorisent les parents admissibles aux expériences. La cadence et les quotas LLM existants restent inchangés. Les plans sont toujours des expériences à un gène, validées par le code ; le LLM ne décide ni du solde ni d'un ordre.
 
 Un témoin virtuel à allocation fixe est créé une seule fois à partir de l'état exact du portefeuille au début du comparatif, puis suit les mêmes données, génomes évolutifs, contraintes et modèle de coûts. `data/shared-portfolio-control-v1.json` n'est pas du capital supplémentaire. La différence mesure uniquement la politique d'allocation, pas l'effet causal de l'ensemble des mutations. Le bilan reste « collecte » avant trente minutes et dix clôtures de chaque côté ; un capital encore en baisse malgré un écart positif au témoin est explicitement distingué d'un gain absolu. Un témoin absent ou incompatible bloque la comparaison au lieu de redémarrer silencieusement les preuves.
+
+
+### Lisibilité du portefeuille et diagnostic des sorties
+
+Darwin affiche la courbe du capital commun par défaut, des cartes de positions (sens, quantité, entrée, prix marqué, durée, horizon du signal, stop et objectif) et les blocages observés par marché. Les comptes indépendants du laboratoire sont repliés et explicitement séparés du capital en euros. Le lien Factory mène aux vrais appels LLM et aux expériences ; un rôle configuré ne prouve pas qu'un modèle a été appelé.
+
+Le moteur expose les causes du garde global (flux, diversité ou confirmation de reprise) sans modifier les règles de risque. Les nouvelles clôtures du portefeuille conservent ce contexte ; les anciennes raisons restent inchangées et ne sont pas reconstruites. Le bilan des sorties couvre toutes les clôtures persistées, alors que le tableau détaillé présente les 100 dernières. La valeur marquée d'une position ouverte inclut les frais d'entrée et le funding estimé, mais pas des frais de sortie non encore payés.
+
+
+Les journaux de clôture du témoin G0 sont archivés séparément dans `baseline_trades` avant de vider leur tampon mémoire. Ils ne sont pas des trades du portefeuille commun. Les checkpoints conservent les positions et statistiques nécessaires à la reprise, avec une copie détachée des objets en mémoire. Darwin et Factory évitent les rafraîchissements HTTP simultanés d'une même vue et bornent leur attente à 15 secondes.

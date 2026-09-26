@@ -117,7 +117,7 @@ $expectedVersion = '0.11.0'
 $backendReady = $false
 $probe = $null
 try {
-    $probe = Invoke-RestMethod "$backendUrl/api/health" -TimeoutSec 2
+    $probe = Invoke-RestMethod "$backendUrl/api/health" -TimeoutSec 10
     $backendReady = $probe.version -eq $expectedVersion -and $probe.project_root -eq $projectRoot -and $probe.paper_only
     if ($probe.project_root -ne $projectRoot -or -not $probe.paper_only) { Fail 'Port 8000 already answers from another installation or a non-paper runtime.' }
     if (-not $backendReady) {
@@ -147,8 +147,8 @@ for ($attempt = 1; $attempt -le 45; $attempt++) {
         break
     }
     try {
-        $api = Invoke-RestMethod "$backendUrl/api/health" -TimeoutSec 2
-        $page = Invoke-WebRequest "$backendUrl/" -TimeoutSec 2 -UseBasicParsing
+        $api = Invoke-RestMethod "$backendUrl/api/health" -TimeoutSec 10
+        $page = Invoke-WebRequest "$backendUrl/" -TimeoutSec 10 -UseBasicParsing
         if ($api.version -eq $expectedVersion -and $api.project_root -eq $projectRoot -and $api.paper_only -and $page.StatusCode -eq 200) {
             Log "READY: $backendUrl"
             if (-not $NoBrowser) { Start-Process "$backendUrl/factory" }
