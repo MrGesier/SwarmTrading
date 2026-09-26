@@ -1,5 +1,6 @@
 import { StrategyName, shortStrategy } from "./strategy-name";
 import { Help } from "./help";
+import {ResearchLabPanel} from "./research-lab";
 import {ResearchActivity} from "./research-activity";
 import {Autocorrection} from "./autocorrection";
 import React, { useEffect, useMemo, useState } from "react";
@@ -14,7 +15,7 @@ type Agent = { id:string; name:string; color:string; role:string; function:strin
 type FactoryState = {
   ts:number; symbol:string; mode:string; population:number; historical_population:number;
   market:{health:string; price?:number|null; regime:string; benchmark_return_bps:number};
-  champion?:{id:string; metrics:any}|null; agents:Agent[]; experiments:any[]; leaderboard:any[]; lessons:any[];
+  lab?:any; champion?:{id:string; metrics:any}|null; agents:Agent[]; experiments:any[]; leaderboard:any[]; lessons:any[];
   pnl?:any; pnl_history?:any[]; cycle?:any; status_counts:Record<string,number>; execution:any; research:any; evolution?:any; engineer?:any; brain_policy?:any; openbot?:any;
 };
 
@@ -167,6 +168,7 @@ export function DarwinFactory({symbol, mode}:{symbol:string;mode:string}){
       <div><small>DERNIER CYCLE TERMINÉ</small><b>{state.cycle?.last_epoch?`Epoch ${state.cycle.last_epoch.id}`:"None yet"}</b><span>{state.cycle?.last_epoch?`${state.cycle.last_epoch.created} created / ${state.cycle.last_epoch.killed} retired`:"No measured improvement yet"}</span></div>
     </section>
     {state.cycle?.diagnosis?.actionable && <div className="darwin-message"><b>Problème détecté : {state.cycle.diagnosis.code==="FEE_DRAG"?"poids excessif des frais":"pertes généralisées"}</b><p>{state.cycle.diagnosis.fee_affected} stratégies affectées par les frais sur {state.cycle.diagnosis.eligible} évaluables. Un cycle anticipé sollicitera les agents, puis testera de nouveaux descendants. Une hypothèse n’est pas une correction validée.</p></div>}
+    <ResearchLabPanel lab={state.lab}/>
     <ResearchActivity key={`${symbol}-${mode}`} runs={state.research?.agent_runs??[]} experiments={state.experiments} cycle={state.cycle} symbol={symbol} mode={mode} events={events}/>
     <Autocorrection/>
     <section className="factory-shell">

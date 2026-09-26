@@ -58,6 +58,7 @@ def factory_state(supervisor: Any, agent_state: dict[str, Any], execution_state:
     champion_id = (state.get("champion") or {}).get("id")
     leader = next((r for r in state.get("leaderboard", []) if r.get("strategy_id") == champion_id), None)
     return {
+        "lab": supervisor.lab.state(),
         "ts": time.time(),
         "symbol": supervisor.symbol,
         "mode": supervisor.mode,

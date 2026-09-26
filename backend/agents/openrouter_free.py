@@ -22,7 +22,7 @@ class FreeProvider:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.client = client
         self.key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        self.limit = max(1, min(20, int(os.getenv("DARWIN_FREE_CALLS_PER_DAY", "20"))))
+        self.limit = max(1, min(50, int(os.getenv("DARWIN_FREE_CALLS_PER_DAY", "40"))))
         with self.db() as db:
             db.execute("CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY, ts REAL, digest TEXT, status TEXT, result TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
@@ -35,7 +35,26 @@ class FreeProvider:
             used = db.execute("SELECT count(*) FROM calls WHERE ts>?", (time.time()-86400,)).fetchone()[0]
             row = db.execute("SELECT value FROM settings WHERE key='blocked_until'").fetchone()
         return {"limit": self.limit, "attempts_24h": used, "remaining": max(0,self.limit-used),
-                "blocked_until": float(row[0]) if row else 0, "scope": "all agents/symbols/processes in this installation"}
+                "blocked_until": float(row[0]) if row else 0,
+                "reserve": min(4,max(0,self.limit//5)),
+                "window": "rolling_24h", "scope": "all agents/symbols/processes in this installation"}
+
+    def remote_budget(self, refresh=False):
+        """Read account limits, never expose key/account identity; cache outside the UI poll."""
+        with self.db() as db:
+            row=db.execute("SELECT value FROM settings WHERE key='remote_budget'").fetchone()
+        cached=json.loads(row[0]) if row else {}
+        if not refresh and cached.get('checked_at',0)>time.time()-3600:return cached
+        result={'checked_at':time.time(),'status':'unavailable'}
+        if self.key:
+            try:
+                with httpx.Client(timeout=10) as client:
+                    r=client.get(self.BASE+'/key',headers={'Authorization':'Bearer '+self.key})
+                    r.raise_for_status(); data=r.json().get('data',{}).get('free_model_daily_requests')
+                    if isinstance(data,dict):result.update(status='observed',**{k:data.get(k) for k in ('used','limit','remaining')})
+            except Exception:pass
+        with self.db() as db:db.execute("INSERT OR REPLACE INTO settings VALUES('remote_budget',?)",(json.dumps(result),))
+        return result
 
     def models(self, refresh=False):
         with self.db() as db:
@@ -63,7 +82,7 @@ class FreeProvider:
             db.execute("INSERT OR REPLACE INTO settings VALUES('models',?)", (json.dumps({'ts':time.time(),'models':models}),))
         return models
 
-    def ask(self, *, system, task, context, schema):
+    def ask(self, *, system, task, context, schema, purpose="routine"):
         started = time.time()
         model = os.getenv('OPENROUTER_FREE_MODEL','').strip()
         def result(status, **extra):
@@ -95,6 +114,14 @@ class FreeProvider:
             blocked=db.execute("SELECT value FROM settings WHERE key='blocked_until'").fetchone()
             if blocked and float(blocked[0])>started:
                 return result('rate-limited',reason='Persistent backoff / circuit breaker')
+            reserve=min(4, max(0,self.limit//5))
+            last=db.execute('SELECT max(ts) FROM calls').fetchone()[0]
+            interval=max(60,int(os.getenv('DARWIN_RESEARCH_MIN_INTERVAL_SECONDS','1800')))
+            if purpose!='incident' and used>=self.limit-reserve:
+                return result('reserved',reason='Remaining attempts reserved for measured incidents')
+            spacing=300 if purpose=='incident' else interval
+            if last and started-last<spacing:
+                return result('paced',reason='Research calls distributed over time; next slot '+str(last+spacing))
             if used>=self.limit:
                 return result('quota',reason='Local 24-hour attempt ceiling reached')
             call_id=db.execute("INSERT INTO calls(ts,digest,status) VALUES(?,?,'pending')",(started,digest)).lastrowid

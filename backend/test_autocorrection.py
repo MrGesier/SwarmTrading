@@ -15,6 +15,7 @@ SCHEMA={'type':'object','properties':{'ok':{'type':'boolean'}},'required':['ok']
 
 def free(tmp_path,monkeypatch,handler):
     monkeypatch.setenv('OPENROUTER_API_KEY','sk-test-secret')
+    monkeypatch.setenv('DARWIN_FREE_CALLS_PER_DAY','20')
     monkeypatch.delenv('OPENROUTER_FREE_MODEL',raising=False)
     def dispatch(req):
         if req.url.path.endswith('/models'):
@@ -26,7 +27,8 @@ def free(tmp_path,monkeypatch,handler):
 
 
 def ask(p,task='test'):
-    return p.ask(system='test',task=task,context={},schema=SCHEMA)
+    with p.db() as db:db.execute('UPDATE calls SET ts=ts-301')
+    return p.ask(system='test',task=task,context={},schema=SCHEMA,purpose='incident')
 
 
 def test_free_shared_budget_cache_and_real_attempts(tmp_path,monkeypatch):

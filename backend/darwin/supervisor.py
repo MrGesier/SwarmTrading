@@ -16,6 +16,7 @@ from agents import DarwinBrains
 from agents.codex_engineer import CodexEngineer
 from engine import GENOMES
 from .autonomy import diagnose
+from .research_lab import ResearchLab
 from .judge import JudgeConfig, judge
 from .genome import MUTABLE_GENES, gene_catalog, upgrade_genome
 from .memory import write_epoch_memory
@@ -47,6 +48,7 @@ class DarwinSupervisor:
             fee_bps=self.population.fee_bps, fee_stress_multiplier=self.population.fee_stress_multiplier)
         if checkpoint and checkpoint.get("fixed_g0"):
             self.baseline.restore(checkpoint["fixed_g0"])
+        self.lab = ResearchLab(data_dir / f"research-lab-{mode}-{symbol}.sqlite",self.population.notional_usd,self.population.fee_bps)
         self.cfg = JudgeConfig(
             min_sample_seconds=float(os.getenv("DARWIN_MIN_SAMPLE_SECONDS", "300")),
             min_closed_trades=int(os.getenv("DARWIN_MIN_CLOSED_TRADES", "5")),
@@ -85,11 +87,13 @@ class DarwinSupervisor:
         self._last_state = state
         self.population.observe(state)
         self.baseline.observe(state)
+        self.lab.observe(state, [a.strategy for a in self.baseline.accounts.values()])
         now = time.time()
         if now - self._diagnosed_at >= 60:
             self._repair_diagnosis = diagnose(self.population.metrics(),
                 min_seconds=max(1800, self.cfg.min_sample_seconds), min_trades=max(20, self.cfg.min_closed_trades))
             self._diagnosed_at = now
+            self.lab.maybe_queue_code(self)
         if now - self._last_pnl_record >= 60:
             self.store.record_pnl(self.pnl_state())
             self._last_pnl_record = now
@@ -344,12 +348,10 @@ class DarwinSupervisor:
         evaluations, champion_id = judge(rows, self.cfg)
         strategy_map = {s["id"]: s for s in self.store.strategies(include_killed=True)}
 
-        self._emit("agent_started", {"task": "audit frozen deterministic selection"}, agent_id="judge")
-        judge_audit = yield lambda: self.brains.judge_audit(evaluations, champion_id)
-        self._remember_agent("judge", judge_audit)
-        self._emit("agent_started", {"task": "audit paper execution environment"}, agent_id="forge")
-        forge_audit = self.brains.forge_audit(self._last_state or {}, rows)
-        self._remember_agent("forge", forge_audit)
+        # Numerical JUDGE remains authoritative. Critique only a promising measured candidate.
+        if any(r.get("multiple_test_pass") and r.get("return_bps",0)>0 and r.get("generation",0)>0 for r in evaluations) and self.lab.critique_due():
+            judge_audit = yield lambda: self.brains.judge_audit(evaluations, champion_id)
+            self._remember_agent("judge", judge_audit)
 
         for row in evaluations:
             sid = row["strategy_id"]
@@ -399,17 +401,8 @@ class DarwinSupervisor:
             return result
 
         selected_ids: list[str] = diverse([r["strategy_id"] for r in ranked])
-        if ranked:
-            self._emit("agent_started", {"task": "select diverse experiment parents"}, agent_id="atlas")
-            atlas = yield lambda: self.brains.select_parents(ranked, recent_lessons)
-            self._remember_agent("atlas", atlas)
-            allowed = {r["strategy_id"] for r in ranked}
-            proposed = atlas.data.get("selected_strategy_ids", []) if isinstance(atlas.data, dict) else []
-            valid = diverse([sid for sid in proposed if sid in allowed])
-            if valid:
-                # Preserve diversity even if ATLAS proposes several near-identical parents.
-                selected_ids = valid + [sid for sid in selected_ids if sid not in valid]
-                selected_ids = diverse(selected_ids)
+        selected_rows=[r for r in ranked if r["strategy_id"] in selected_ids]
+        plans = yield lambda: self.lab.batch(self, selected_rows, recent_lessons)
 
         row_by_id = {r["strategy_id"]: r for r in evaluations}
         for parent_id in selected_ids:
@@ -417,8 +410,7 @@ class DarwinSupervisor:
             parent = strategy_map.get(parent_id)
             if not parent_row or not parent:
                 continue
-            plan = yield lambda: self._validated_plan(parent_row, recent_lessons)
-            plan = yield lambda: self._evolve_plan(parent, plan)
+            plan = plans.get(parent_id) or self.scientist.plan(parent_row, recent_lessons)
             plan = self.novel_plan(parent, plan)
             plan_row = {"parent_id": parent["id"], **plan.to_dict()}
             experiment_plans.append(plan_row)
@@ -489,17 +481,10 @@ class DarwinSupervisor:
 
         # Keep deterministic lessons and add an LLM-compressed lesson separately.
         write_epoch_memory(self.store, evaluations, champion_id)
-        self._emit("agent_started", {"task": "compress evidence into memory"}, agent_id="mnemosyne", strategy_id=champion_id)
-        memory = yield lambda: self.brains.memory_lesson(evaluations, champion_id, experiment_plans)
-        self._remember_agent("mnemosyne", memory)
-        if isinstance(memory.data, dict):
-            self.store.add_lesson(
-                "llm_epoch",
-                memory.data,
-                strategy_id=champion_id,
-                confidence=float(memory.data.get("confidence", 0.2) or 0.2),
-            )
-            self._emit("lesson_saved", {"confidence": float(memory.data.get("confidence", 0.2) or 0.2), "lesson": memory.data}, agent_id="mnemosyne", strategy_id=champion_id)
+        self.lab.record("epoch_report", {"epoch_id":epoch_id,"created":created,
+            "retired":sum(r["decision"]=="KILL" for r in evaluations),"resolved":resolved_experiments,
+            "comparison":comparison,"incident":self._repair_diagnosis,
+            "next_experiments":experiment_plans,"interpretation":"Paper evidence only; new mutations and passing tests do not establish improvement."})
 
         self._emit("epoch_completed", {"epoch_id": epoch_id, "champion_id": champion_id, "created": created, "killed": sum(r["decision"] == "KILL" for r in evaluations), "resolved_experiments": resolved_experiments}, agent_id="atlas", strategy_id=champion_id)
         # Queue evidence-backed engineering work automatically, outside capital authority.

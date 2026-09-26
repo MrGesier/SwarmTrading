@@ -210,6 +210,8 @@ def execute(queue,job,root=ROOT,proposer=None,regression=None):
 
 
 def main():
+    from dotenv import load_dotenv
+    load_dotenv(ROOT/'.env', override=False)
     parser=argparse.ArgumentParser();parser.add_argument('--once',action='store_true');parser.add_argument('--mock',action='store_true');args=parser.parse_args()
     queue=DemoQueue(ROOT/'data/autocorrection')
     # OS-owned lock releases on crash; a second worker never claims a second job.
@@ -232,7 +234,11 @@ def main():
         if args.mock:queue.enqueue({'objective':'Explicit mock pipeline verification'},'mock')
         while True:
             job=queue.claim()
-            if job:execute(queue,job)
+            if job:
+                if job.get('kind')=='research':
+                    from research_worker import execute_research
+                    execute_research(queue,job,ROOT)
+                else:execute(queue,job)
             if args.once:break
             time.sleep(2)
     finally:stop.set();lock.close()

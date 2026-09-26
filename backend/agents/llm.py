@@ -286,7 +286,7 @@ class AgentBrain:
             return self._result(ok=True, data=fallback, started=started)
         if self.runtime == "openrouter-free" and self.enabled:
             from .openrouter_free import FreeProvider
-            self.provider_trace = FreeProvider().ask(system=self.system_prompt,task=task,context=context,schema=schema)
+            self.provider_trace = FreeProvider().ask(system=self.system_prompt,task=task,context=context,schema=schema, **({"purpose":"incident"} if context.get("budget_priority")=="incident" else {}))
             self.model = self.provider_trace.get("model") or "unselected :free model"
             ok = self.provider_trace["status"] in {"connected", "cached"}
             return self._result(ok=ok,data=self.provider_trace.get("data",fallback),started=started,

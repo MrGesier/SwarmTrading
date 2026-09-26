@@ -21,7 +21,7 @@ class DemoQueue:
     def db(self):
         return sqlite3.connect(self.path,timeout=15)
 
-    def enqueue(self, task_pack, provider='codex-cli'):
+    def enqueue(self, task_pack, provider='codex-cli', kind='demo'):
         if provider not in ('codex-cli','mock'):
             raise ValueError('unsupported engineer provider')
         with self.db() as db:
@@ -30,11 +30,15 @@ class DemoQueue:
                 job=json.loads(row[0])
                 if job['state'] in ACTIVE:
                     return job
+            if kind=='research':
+                recent=db.execute("SELECT payload FROM jobs WHERE updated>?",(time.time()-86400,)).fetchall()
+                previous=next((json.loads(r[0]) for r in recent if json.loads(r[0]).get('kind')=='research'),None)
+                if previous:return previous
             stamp=time.time(); identity=uuid.uuid4().hex
-            job={'id':identity,'state':'QUEUED','created_at':stamp,'updated_at':stamp,'provider':provider,
+            job={'kind':kind,'id':identity,'state':'QUEUED','created_at':stamp,'updated_at':stamp,'provider':provider,
                  'model':None,'real_call':False,'task_pack':task_pack,'prompt_version':'demo-code-v3',
                  'history':[{'state':'DETECTED','ts':stamp},{'state':'QUEUED','ts':stamp}],
-                 'evidence':'Controlled defect: zero completed validation checks is incorrectly labelled PASSED in an isolated display helper.',
+                 'evidence':('Measured incident: '+str(task_pack.get('incident',{}).get('code'))+'; real captured Hyperliquid observations; no defect injection.' if kind=='research' else 'Controlled defect: zero completed validation checks is incorrectly labelled PASSED in an isolated display helper.'),
                  'checks':[], 'diff':'', 'files':[], 'integration':'HUMAN_REVIEW_REQUIRED',
                  'reason':None}
             db.execute('INSERT INTO jobs VALUES(?,?,?,?)',(identity,'QUEUED',stamp,json.dumps(job)))

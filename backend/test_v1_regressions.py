@@ -356,11 +356,11 @@ def test_incident_runs_brains_creates_challengers_and_records_reason(tmp_path, m
         supervisor._repair_diagnosis = diagnose(supervisor.population.metrics(), min_seconds=1800, min_trades=20)
         supervisor.last_epoch = time.time() - 4000
         captured = []
-        original = supervisor.brains.curie_plan
-        def capture(row, lessons, fallback):
-            captured.append(row['measured_incident']['code'])
-            return original(row, lessons, fallback)
-        monkeypatch.setattr(supervisor.brains, 'curie_plan', capture)
+        original = supervisor.brains.curie.ask_json
+        def capture(**kwargs):
+            captured.extend(r['measured_incident']['code'] for r in kwargs['context']['candidates'])
+            return original(**kwargs)
+        monkeypatch.setattr(supervisor.brains.curie, 'ask_json', capture)
         result = supervisor.run_epoch()
         assert result['ran'] and result['created'] > 0
         assert captured and set(captured) == {'FEE_DRAG'}

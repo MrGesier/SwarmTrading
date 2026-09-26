@@ -48,7 +48,7 @@ def create_demo_router(root, get_session, select_provider=None):
     def state(request:Request):
         auth(request)
         provider=FreeProvider()
-        return {**queue.state(),'openrouter':{'configured':bool(provider.key),'budget':provider.budget()},
+        return {**queue.state(),'openrouter':{'configured':bool(provider.key),'budget':provider.budget(),'remote_budget':provider.remote_budget()},
                 'providers':['deterministic','openrouter-free','ollama'],
                 'selected_provider':os.getenv('DARWIN_RESEARCH_PROVIDER','openai'),
                 'ollama':'not installed in this demonstration','integration':'HUMAN_REVIEW_REQUIRED'}
