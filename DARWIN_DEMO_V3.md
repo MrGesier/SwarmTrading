@@ -62,3 +62,12 @@ La demande initiale `/docs/auth` n’a pas pu être chargée ; le comportement d
 - La récursivité actuelle ajuste des paramètres bornés, conserve les lignées et compare les descendants. Le défaut de code de la démo reste volontairement un helper de présentation. La réécriture des formules de stratégie à partir de diagnostics et leur évaluation hors échantillon ne sont pas encore implémentées.
 
 Pour reprendre l’appel réel : configurer uniquement `OPENROUTER_API_KEY` dans `.env` pour les agents de recherche ; relancer `Demarrer-Darwin-Demo.cmd` sous Windows pour le worker Codex, puis lancer la démonstration Codex dans Factory. Aucune clé OpenAI n’est demandée pour Codex. Les propositions restent soumises à validation humaine avant intégration.
+
+
+## Reprise vérifiée le 26 septembre 2026
+
+Le serveur local tourne en paper. Après redémarrage avec accès réseau, le ping depuis l’application a reçu une vraie réponse OpenRouter de `cohere/north-mini-code:free` (160 tokens, 2,1 s). Un cycle de démonstration déclenché manuellement après le seuil d’observation a terminé l’epoch 17 : 36 stratégies éligibles, 3 descendants créés, 0 retirée. ATLAS, CURIE, la critique JUDGE et MNEMOSYNE ont des réponses réelles validées. Certaines propositions CURIE/EVOLVE ont été rejetées et remplacées par le repli déterministe, explicitement journalisé. La Factory affiche les modèles et les trois créations. L’évaluation des nouveaux descendants reste à effectuer sur leur prochaine fenêtre ; aucune progression rentable n’est affirmée.
+
+Le cycle emploie encore des appels synchrones : l’interface et le flux peuvent attendre pendant les requêtes LLM. Il faut isoler ce travail avant de qualifier le fonctionnement continu de robuste. Codex CLI connecté à ChatGPT reste bloqué par Windows dans la session isolée ; le dernier worker existant signalait un CLI introuvable. La démo de code complète est donc validée en mock seulement.
+
+80 tests backend repassés avec `DARWIN_LLM_ENABLED=false`. La PR #1 au commit e3595e1 a une exécution CI réussie (run 35570310963), sans fil de revue ouvert. La publication V3 n’a pas réussi : CLI GitHub refusé par Windows, push Git en échec, connecteur GitHub en lecture autorisé mais création de tree refusée HTTP 403 `Resource not accessible by integration`. Aucun nouvel objet Git ni PR n’est prétendu publié. `Publish-Darwin-V3.ps1` et le raccourci `outputs/Publier-Darwin-V3.cmd` préparent une PR en brouillon basée sur la branche de #1, avec contrôle de branche, arbre propre, ascendance et SHA distant, sans force-push ni fusion.
